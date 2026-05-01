@@ -31,11 +31,7 @@
     }
 
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{height:100%;overflow:hidden}
-    /* iOS Safari: lock page-level scroll so keyboard doesn't push content off screen */
-    @supports (-webkit-touch-callout: none) {
-      html{position:fixed;width:100%;top:0;left:0}
-    }
+    html{height:100%;overflow:hidden;position:fixed;width:100%;top:0;left:0}
     body{
       height:100%; height:100dvh;
       display:flex; flex-direction:column;
