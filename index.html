@@ -793,16 +793,22 @@ render();
 // ── iOS keyboard fix ──────────────────────────────────────────────────────────
 if (window.visualViewport) {
   const inputBar = document.querySelector('.input-bar');
-  function onVVResize() {
-    const vv = window.visualViewport;
-    const keyboardHeight = window.innerHeight - vv.offsetTop - vv.height;
-    const safeBottom = keyboardHeight > 10 ? 0 : null;
-    inputBar.style.bottom = Math.max(0, keyboardHeight) + 'px';
-    inputBar.style.paddingBottom = keyboardHeight > 10 ? '10px' : '';
-  }
-  window.visualViewport.addEventListener('resize', onVVResize);
-  window.visualViewport.addEventListener('scroll', onVVResize);
+
+  window.visualViewport.addEventListener('resize', () => {
+    const kbH = window.innerHeight - window.visualViewport.height;
+    inputBar.style.bottom = Math.max(0, kbH) + 'px';
+    inputBar.style.paddingBottom = kbH > 10 ? '10px' : '';
+  });
+
+  // Prevent Safari from scrolling the page when keyboard opens
+  window.visualViewport.addEventListener('scroll', () => {
+    window.scrollTo(0, 0);
+  });
 }
+
+document.getElementById('qi').addEventListener('focus', () => {
+  setTimeout(() => window.scrollTo(0, 0), 50);
+});
 </script>
 </body>
 </html>
