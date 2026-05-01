@@ -31,7 +31,7 @@
     }
 
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{height:100%}
+    html{height:100%;overflow:hidden;position:fixed;width:100%;top:0;left:0}
     body{
       height:100%; height:100dvh;
       display:flex; flex-direction:column;
@@ -89,7 +89,7 @@
     .pill.active{border-color:var(--accent);color:var(--accent);background:var(--pill-active-bg)}
 
     /* ── MAIN ── */
-    main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg);padding-bottom:80px}
+    main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;background:var(--bg)}
 
     .legend-toggle{
       display:flex;align-items:center;gap:6px;
@@ -140,8 +140,7 @@
 
     /* ── INPUT BAR ── */
     .input-bar{
-      position:fixed;bottom:0;left:0;right:0;
-      z-index:100;
+      flex-shrink:0;
       background:var(--bg);
       border-top:1px solid var(--border);
       padding:10px 14px;
@@ -791,24 +790,13 @@ applyTheme(theme);
 render();
 
 // ── iOS keyboard fix ──────────────────────────────────────────────────────────
+// html { position: fixed } prevents iOS Safari from scrolling the page on focus.
+// We just need to resize the body to match the visible viewport height.
 if (window.visualViewport) {
-  const inputBar = document.querySelector('.input-bar');
-
   window.visualViewport.addEventListener('resize', () => {
-    const kbH = window.innerHeight - window.visualViewport.height;
-    inputBar.style.bottom = Math.max(0, kbH) + 'px';
-    inputBar.style.paddingBottom = kbH > 10 ? '10px' : '';
-  });
-
-  // Prevent Safari from scrolling the page when keyboard opens
-  window.visualViewport.addEventListener('scroll', () => {
-    window.scrollTo(0, 0);
+    document.body.style.height = window.visualViewport.height + 'px';
   });
 }
-
-document.getElementById('qi').addEventListener('focus', () => {
-  setTimeout(() => window.scrollTo(0, 0), 50);
-});
 </script>
 </body>
 </html>
