@@ -260,18 +260,18 @@
     .cal-nav:disabled{color:var(--border)}
     .cal-wdays{display:grid;grid-template-columns:repeat(7,1fr);padding:0 10px;margin-bottom:2px}
     .cal-wd{text-align:center;font-size:0.62rem;font-weight:700;color:var(--muted);padding:3px 0}
-    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);padding:0 10px 12px;gap:4px}
+    .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);padding:0 6px 14px;gap:2px}
     .cal-cell{
-      aspect-ratio:1;display:flex;flex-direction:column;
+      height:42px;display:flex;flex-direction:column;
       align-items:center;justify-content:center;
-      font-size:0.82rem;cursor:pointer;border-radius:50%;
-      position:relative;font-weight:500;
+      font-size:0.85rem;cursor:pointer;
+      border-radius:50%;position:relative;font-weight:500;
     }
     .cal-cell.empty{cursor:default;pointer-events:none}
     .cal-cell.future{color:var(--border);cursor:default;pointer-events:none}
     .cal-cell.has-data::after{
       content:'';width:4px;height:4px;border-radius:50%;
-      background:var(--green);position:absolute;bottom:1px;
+      background:var(--green);position:absolute;bottom:3px;
     }
     .cal-cell.is-today{background:var(--accent);color:#fff;font-weight:700}
     .cal-cell.is-today.has-data::after{background:rgba(255,255,255,.7)}
