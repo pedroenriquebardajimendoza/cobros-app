@@ -843,10 +843,39 @@ document.getElementById('btn-clear').addEventListener('click',()=>{
   }
 });
 
+// ── Auto-sync on open ─────────────────────────────────────────────────────────
+async function autoSync() {
+  const tok = localStorage.getItem('gh_tok');
+  if (!tok) return;
+  setSyncDot('syncing');
+  try {
+    let gid = localStorage.getItem('gh_gid');
+    const h = {'Authorization':`token ${tok}`};
+    if (!gid) {
+      const list = await(await fetch('https://api.github.com/gists',{headers:h})).json();
+      const found = Array.isArray(list)?list.find(g=>g.description==='cobros-app-data'):null;
+      if (!found){setSyncDot('error');return;}
+      gid = found.id; localStorage.setItem('gh_gid',gid);
+    }
+    const j = await(await fetch(`https://api.github.com/gists/${gid}`,{headers:h})).json();
+    const content = j.files?.[GFILE]?.content;
+    if (!content){setSyncDot('error');return;}
+    const remote = JSON.parse(content);
+    // Merge: union by ID — remote overwrites local, local-only records are kept
+    const map = new Map(records.map(r=>[r.id,r]));
+    for (const r of remote) map.set(r.id,r);
+    records = [...map.values()].sort((a,b)=>b.createdAt-a.createdAt);
+    localStorage.setItem('cobros_v2',JSON.stringify(records));
+    setSyncDot('synced');
+    render();
+  } catch(e){ setSyncDot('error'); }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 load();
 applyTheme(theme);
 render();
+autoSync(); // pull from Gist every time the app opens
 
 // ── Keyboard fix (iOS Safari + Chrome/Brave) ───────────────────────────────────
 // WKWebView (iOS Chrome/Brave) scrolls the visual viewport to focus the input,
