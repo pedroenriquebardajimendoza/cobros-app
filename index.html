@@ -253,13 +253,14 @@
     .hr-total{font-size:0.8rem;font-weight:600;color:var(--green);text-align:right}
     .hr-info{font-size:0.64rem;color:var(--muted);text-align:right}
 
-    /* bank summary */
-    .bk-section{border-bottom:1px solid var(--border);padding:10px 0 6px}
-    .bk-head{font-size:0.65rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;padding:0 18px 5px}
-    .bk-row{display:flex;align-items:center;gap:7px;padding:4px 18px}
-    .bk-amt{font-size:0.82rem;font-weight:600;min-width:72px}
-    .bk-name{font-size:0.75rem;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .bk-meta{font-size:0.62rem;color:var(--muted);flex-shrink:0}
+    /* rank badge (last 3 per bank) */
+    .brank{
+      font-size:0.5rem;font-weight:700;
+      width:15px;height:15px;min-width:15px;
+      border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      background:var(--accent);color:#fff;flex-shrink:0;
+    }
 
     /* settings */
     .set-row{
@@ -333,7 +334,6 @@
     <button class="nav-btn" id="btn-next">›</button>
     <div class="hdr-btns">
       <button class="icon-btn" id="btn-theme">☀️</button>
-      <button class="icon-btn" id="btn-bank">🏦</button>
       <button class="icon-btn" id="btn-hist">📋</button>
       <button class="icon-btn" id="btn-cfg">⚙️</button>
     </div>
@@ -404,15 +404,6 @@
       <button class="sbc" id="edit-cancel">Cancelar</button>
       <button class="sbp" id="edit-ok">Guardar</button>
     </div>
-  </div>
-</div>
-
-<!-- BANK SUMMARY SHEET -->
-<div class="sheet-overlay" id="bank-ov">
-  <div class="sheet">
-    <div class="s-handle"></div>
-    <div class="s-title">Últimas 3 por banco</div>
-    <div class="hist-scroll" id="bank-list"></div>
   </div>
 </div>
 
@@ -568,6 +559,21 @@ function renderHeader() {
   document.getElementById('btn-next').disabled = viewDate >= todayISO();
 }
 
+function getBankRanks() {
+  const byBank = {};
+  for (const r of records) {
+    if (!r.account) continue;
+    if (!byBank[r.account]) byBank[r.account] = [];
+    byBank[r.account].push(r);
+  }
+  const ranks = {};
+  for (const bank of Object.keys(byBank)) {
+    byBank[bank].sort((a,b)=>b.createdAt-a.createdAt);
+    byBank[bank].slice(0,3).forEach((r,i) => { ranks[r.id] = i+1; });
+  }
+  return ranks;
+}
+
 function renderList() {
   const el = document.getElementById('list');
   const data = getFiltered().sort((a,b)=>b.createdAt-a.createdAt);
@@ -575,16 +581,18 @@ function renderList() {
     el.innerHTML=`<div class="empty">${activeFilter==='all'?'Escribe abajo para añadir cobros.':'Sin cobros con este filtro.'}</div>`;
     return;
   }
+  const ranks = getBankRanks();
   el.innerHTML = data.map(r=>{
     const name = r.name?`<span class="en">${cap(r.name)}</span>`:'';
     const sc   = (!r.com && r.tipo==='D')?`<span class="bsc">sc</span>`:'';
+    const rk   = ranks[r.id] ? `<span class="brank">${ranks[r.id]}</span>` : '';
     return `<div class="entry ${r.confirmed?'done':''}" id="e-${r.id}">
       <button class="chk ${r.confirmed?'on':''}" onclick="tapConfirm('${r.id}')">✓</button>
       <div class="entry-body" onclick="editEntry('${r.id}')">
         <span class="bt ${r.tipo}">${r.tipo}</span>
         <span class="ea">${fmt(r.amount)}</span>
         ${r.account?`<span class="ba">${r.account}</span>`:''}
-        ${sc}
+        ${sc}${rk}
         ${name}
       </div>
       <button class="btn-del" onclick="delRec('${r.id}')">✕</button>
@@ -677,48 +685,20 @@ function addEntry() {
 function openSheet(n) {
   if (n==='hist') renderHist();
   if (n==='cal') { calMonth = new Date(viewDate+'T12:00:00'); renderCal(); }
-  if (n==='bank') renderBankSummary();
   if (n==='cfg') {
     document.getElementById('gh-tok').value = localStorage.getItem('gh_tok')||'';
     document.getElementById('gh-gid').value = localStorage.getItem('gh_gid')||'';
   }
   document.getElementById(n+'-ov').classList.add('open');
 }
-function renderBankSummary() {
-  const el = document.getElementById('bank-list');
-  const banks = {};
-  for (const r of records) {
-    const k = r.account || '(sin cuenta)';
-    if (!banks[k]) banks[k] = [];
-    banks[k].push(r);
-  }
-  const keys = Object.keys(banks).sort((a,b)=>a.localeCompare(b));
-  if (!keys.length) { el.innerHTML=`<div class="empty">Sin datos.</div>`; return; }
-  el.innerHTML = keys.map(bank => {
-    const latest = banks[bank].sort((a,b)=>b.createdAt-a.createdAt).slice(0,3);
-    const rows = latest.map(r => {
-      const {label} = displayDate(r.date);
-      const nm = r.name ? cap(r.name) : `<span style="color:var(--muted)">—</span>`;
-      const sc = (!r.com && r.tipo==='D') ? ' <span class="bsc">sc</span>' : '';
-      return `<div class="bk-row">
-        <span class="bt ${r.tipo}">${r.tipo}</span>
-        <span class="bk-amt">${fmt(r.amount)}${sc}</span>
-        <span class="bk-name">${nm}</span>
-        <span class="bk-meta">${label}</span>
-      </div>`;
-    }).join('');
-    return `<div class="bk-section"><div class="bk-head">${bank}</div>${rows}</div>`;
-  }).join('');
-}
 function closeSheet(n) {
   document.getElementById(n+'-ov').classList.remove('open');
 }
-['hist','cfg','cal','edit','bank'].forEach(n=>{
+['hist','cfg','cal','edit'].forEach(n=>{
   document.getElementById(n+'-ov').addEventListener('click',e=>{
     if (e.target===document.getElementById(n+'-ov')) closeSheet(n);
   });
 });
-document.getElementById('btn-bank').addEventListener('click',()=>openSheet('bank'));
 document.getElementById('edit-ok').addEventListener('click', saveEdit);
 document.getElementById('edit-cancel').addEventListener('click',()=>closeSheet('edit'));
 document.getElementById('edit-amount').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('edit-name').focus();}});
