@@ -2,7 +2,7 @@
 <html lang="es" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cobros</title>
@@ -789,13 +789,19 @@ load();
 applyTheme(theme);
 render();
 
-// ── iOS keyboard fix ──────────────────────────────────────────────────────────
-// html { position: fixed } prevents iOS Safari from scrolling the page on focus.
-// We just need to resize the body to match the visible viewport height.
+// ── Keyboard fix (iOS Safari + Chrome/Brave) ───────────────────────────────────
+// WKWebView (iOS Chrome/Brave) scrolls the visual viewport to focus the input,
+// making content disappear. We counteract by:
+//   1. Resizing body to the visible height (vv.height)
+//   2. Translating body down by vv.offsetTop to neutralise any native scroll
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', () => {
-    document.body.style.height = window.visualViewport.height + 'px';
-  });
+  function onViewport() {
+    const vv = window.visualViewport;
+    document.body.style.height = vv.height + 'px';
+    document.body.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+  }
+  window.visualViewport.addEventListener('resize', onViewport);
+  window.visualViewport.addEventListener('scroll', onViewport);
 }
 </script>
 </body>
