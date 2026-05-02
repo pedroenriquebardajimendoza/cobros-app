@@ -137,6 +137,37 @@
     }
     .btn-del:active{color:var(--red)}
     .empty{text-align:center;padding:50px 20px;color:var(--muted);font-size:0.8rem}
+    .bsc{font-size:0.55rem;font-weight:700;padding:2px 5px;border-radius:3px;background:var(--sin-bg);color:var(--sin-fg);flex-shrink:0;letter-spacing:.03em}
+
+    /* ── MINI POPUP ── */
+    .mpop{
+      display:none;position:fixed;z-index:500;
+      background:var(--surface);border:1px solid var(--border);
+      border-radius:10px;padding:10px;width:210px;
+      box-shadow:0 8px 28px rgba(0,0,0,.28);
+      animation:popIn .14s ease;
+    }
+    @keyframes popIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}
+    .mpop.show{display:block}
+    .mpop::after{
+      content:'';position:absolute;
+      bottom:-6px;left:var(--aw,16px);
+      width:10px;height:10px;
+      background:var(--surface);
+      border-right:1px solid var(--border);border-bottom:1px solid var(--border);
+      transform:rotate(45deg);
+    }
+    .mpop.flip::after{bottom:auto;top:-6px;transform:rotate(-135deg)}
+    .mpop-inp{
+      display:block;width:100%;margin-bottom:8px;
+      background:var(--bg);border:1px solid var(--border);border-radius:7px;
+      color:var(--text);font-size:0.85rem;padding:8px 10px;
+      outline:none;-webkit-appearance:none;
+    }
+    .mpop-inp:focus{border-color:var(--accent)}
+    .mpop-btns{display:flex;gap:6px}
+    .mpop-cancel{flex:1;padding:7px;border-radius:7px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:0.75rem;cursor:pointer}
+    .mpop-ok{flex:2;padding:7px;border-radius:7px;border:none;background:var(--green);color:#fff;font-size:0.75rem;font-weight:600;cursor:pointer}
 
     /* ── INPUT BAR ── */
     .input-bar{
@@ -337,18 +368,13 @@
   <div id="preview">D = depósito (cobra comisión) · T = transferencia · sc = sin comisión</div>
 </div>
 
-<!-- NAME SHEET -->
-<div class="sheet-overlay" id="name-ov">
-  <div class="sheet">
-    <div class="s-handle"></div>
-    <div class="s-title">¿Quién envió?</div>
-    <div class="s-desc" id="name-desc"></div>
-    <input class="s-input" id="name-inp" type="text" placeholder="Nombre (opcional)"
-      autocomplete="off" autocorrect="off" autocapitalize="words">
-    <div class="s-btns">
-      <button class="sbc" id="name-cancel">Cancelar</button>
-      <button class="sbp" id="name-ok">Confirmar ✓</button>
-    </div>
+<!-- NAME POPUP -->
+<div id="mpop" class="mpop">
+  <input id="mpop-inp" class="mpop-inp" type="text" placeholder="Nombre (opcional)"
+    autocomplete="off" autocorrect="off" autocapitalize="words">
+  <div class="mpop-btns">
+    <button class="mpop-cancel" id="mpop-cancel">Cancelar</button>
+    <button class="mpop-ok" id="mpop-ok">Confirmar ✓</button>
   </div>
 </div>
 
@@ -516,12 +542,14 @@ function renderList() {
   }
   el.innerHTML = data.map(r=>{
     const name = r.name?`<span class="en">${cap(r.name)}</span>`:'';
+    const sc   = (!r.com && r.tipo==='D')?`<span class="bsc">sc</span>`:'';
     return `<div class="entry ${r.confirmed?'done':''}" id="e-${r.id}">
       <button class="chk ${r.confirmed?'on':''}" onclick="tapConfirm('${r.id}')">✓</button>
       <div class="entry-body">
         <span class="bt ${r.tipo}">${r.tipo}</span>
         <span class="ea">${fmt(r.amount)}</span>
         ${r.account?`<span class="ba">${r.account}</span>`:''}
+        ${sc}
         ${name}
       </div>
       <button class="btn-del" onclick="delRec('${r.id}')">✕</button>
@@ -537,16 +565,42 @@ function tapConfirm(id) {
   if (!r) return;
   if (r.confirmed) { r.confirmed=false; save(); render(); return; }
   pendingId = id;
-  document.getElementById('name-inp').value = r.name||'';
-  document.getElementById('name-desc').textContent =
-    `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
-  openSheet('name');
-  setTimeout(()=>document.getElementById('name-inp').focus(), 250);
+  document.getElementById('mpop-inp').value = r.name || '';
+  const btn = document.querySelector(`#e-${id} .chk`);
+  showPopup(btn);
+}
+function showPopup(anchor) {
+  const pop = document.getElementById('mpop');
+  pop.classList.remove('flip','show');
+  // measure after brief paint so offsetHeight is valid
+  requestAnimationFrame(() => {
+    const rect  = anchor ? anchor.getBoundingClientRect() : {top:200,bottom:230,left:14,width:22};
+    const popW  = 210;
+    const popH  = pop.offsetHeight || 82;
+    const vvH   = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    const mg    = 8;
+    // arrow x relative to popup left
+    let left  = Math.max(mg, Math.min(rect.left - 10, window.innerWidth - popW - mg));
+    let aw    = Math.max(8, Math.min(rect.left + rect.width/2 - left - 6, popW - 20));
+    // above or below?
+    let top = rect.top - popH - mg - 4;
+    if (top < mg) { top = rect.bottom + mg + 4; pop.classList.add('flip'); }
+    top = Math.max(mg, Math.min(top, vvH - popH - mg));
+    pop.style.left = left + 'px';
+    pop.style.top  = top  + 'px';
+    pop.style.setProperty('--aw', aw + 'px');
+    pop.classList.add('show');
+    setTimeout(() => document.getElementById('mpop-inp').focus(), 80);
+  });
+}
+function hidePopup() {
+  document.getElementById('mpop').classList.remove('show');
+  pendingId = null;
 }
 function doConfirm() {
   const r = records.find(r=>r.id===pendingId);
-  if (r) { r.name=document.getElementById('name-inp').value.trim(); r.confirmed=true; save(); render(); }
-  closeSheet('name');
+  if (r) { r.name=document.getElementById('mpop-inp').value.trim(); r.confirmed=true; save(); render(); }
+  hidePopup();
 }
 function delRec(id) {
   if (!confirm('¿Eliminar?')) return;
@@ -577,16 +631,21 @@ function openSheet(n) {
 }
 function closeSheet(n) {
   document.getElementById(n+'-ov').classList.remove('open');
-  if (n==='name') pendingId=null;
 }
-['name','hist','cfg','cal'].forEach(n=>{
+['hist','cfg','cal'].forEach(n=>{
   document.getElementById(n+'-ov').addEventListener('click',e=>{
     if (e.target===document.getElementById(n+'-ov')) closeSheet(n);
   });
 });
-document.getElementById('name-cancel').addEventListener('click',()=>closeSheet('name'));
-document.getElementById('name-ok').addEventListener('click', doConfirm);
-document.getElementById('name-inp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doConfirm();}});
+// Mini popup listeners
+document.getElementById('mpop-ok').addEventListener('click', doConfirm);
+document.getElementById('mpop-cancel').addEventListener('click', hidePopup);
+document.getElementById('mpop-inp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doConfirm();}});
+document.addEventListener('pointerdown', e=>{
+  const pop=document.getElementById('mpop');
+  if (!pop.classList.contains('show')) return;
+  if (!pop.contains(e.target) && !e.target.closest('.chk')) hidePopup();
+});
 document.getElementById('btn-hist').addEventListener('click',()=>openSheet('hist'));
 document.getElementById('btn-cfg').addEventListener('click',()=>openSheet('cfg'));
 
