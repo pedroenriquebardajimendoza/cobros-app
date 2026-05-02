@@ -121,7 +121,9 @@
     .entry-body{
       flex:1;display:flex;align-items:center;
       flex-wrap:wrap;gap:5px;row-gap:2px;min-width:0;
+      cursor:pointer;
     }
+    .entry-body:active{opacity:.7}
     .bt{font-size:0.58rem;font-weight:700;padding:2px 5px;border-radius:3px;flex-shrink:0;letter-spacing:.02em}
     .D{background:var(--D-bg);color:var(--D-fg)}
     .T{background:var(--T-bg);color:var(--T-fg)}
@@ -251,6 +253,14 @@
     .hr-total{font-size:0.8rem;font-weight:600;color:var(--green);text-align:right}
     .hr-info{font-size:0.64rem;color:var(--muted);text-align:right}
 
+    /* bank summary */
+    .bk-section{border-bottom:1px solid var(--border);padding:10px 0 6px}
+    .bk-head{font-size:0.65rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;padding:0 18px 5px}
+    .bk-row{display:flex;align-items:center;gap:7px;padding:4px 18px}
+    .bk-amt{font-size:0.82rem;font-weight:600;min-width:72px}
+    .bk-name{font-size:0.75rem;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bk-meta{font-size:0.62rem;color:var(--muted);flex-shrink:0}
+
     /* settings */
     .set-row{
       display:flex;justify-content:space-between;align-items:center;
@@ -323,6 +333,7 @@
     <button class="nav-btn" id="btn-next">›</button>
     <div class="hdr-btns">
       <button class="icon-btn" id="btn-theme">☀️</button>
+      <button class="icon-btn" id="btn-bank">🏦</button>
       <button class="icon-btn" id="btn-hist">📋</button>
       <button class="icon-btn" id="btn-cfg">⚙️</button>
     </div>
@@ -377,6 +388,31 @@
   <div class="mpop-btns">
     <button class="mpop-cancel" id="mpop-cancel">Cancelar</button>
     <button class="mpop-ok" id="mpop-ok">Confirmar ✓</button>
+  </div>
+</div>
+
+<!-- EDIT SHEET -->
+<div class="sheet-overlay" id="edit-ov">
+  <div class="sheet">
+    <div class="s-handle"></div>
+    <div class="s-title">Editar entrada</div>
+    <div style="padding:0 18px 4px"><span class="set-label">Monto</span></div>
+    <input class="s-input" id="edit-amount" type="number" inputmode="decimal" placeholder="0.00" style="margin:0 18px 12px;width:calc(100% - 36px)">
+    <div style="padding:0 18px 4px"><span class="set-label">Nombre</span></div>
+    <input class="s-input" id="edit-name" type="text" placeholder="Nombre (opcional)" autocomplete="off" autocorrect="off" autocapitalize="words" style="margin:0 18px 14px;width:calc(100% - 36px)">
+    <div class="s-btns">
+      <button class="sbc" id="edit-cancel">Cancelar</button>
+      <button class="sbp" id="edit-ok">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- BANK SUMMARY SHEET -->
+<div class="sheet-overlay" id="bank-ov">
+  <div class="sheet">
+    <div class="s-handle"></div>
+    <div class="s-title">Últimas 3 por banco</div>
+    <div class="hist-scroll" id="bank-list"></div>
   </div>
 </div>
 
@@ -544,7 +580,7 @@ function renderList() {
     const sc   = (!r.com && r.tipo==='D')?`<span class="bsc">sc</span>`:'';
     return `<div class="entry ${r.confirmed?'done':''}" id="e-${r.id}">
       <button class="chk ${r.confirmed?'on':''}" onclick="tapConfirm('${r.id}')">✓</button>
-      <div class="entry-body">
+      <div class="entry-body" onclick="editEntry('${r.id}')">
         <span class="bt ${r.tipo}">${r.tipo}</span>
         <span class="ea">${fmt(r.amount)}</span>
         ${r.account?`<span class="ba">${r.account}</span>`:''}
@@ -566,31 +602,30 @@ function tapConfirm(id) {
   pendingId = id;
   const inp = document.getElementById('mpop-inp');
   inp.value = r.name || '';
-  inp.focus(); // must be synchronous within user gesture to trigger iOS keyboard
   const btn = document.querySelector(`#e-${id} .chk`);
   showPopup(btn);
+  inp.focus(); // called after show so element is visible — triggers iOS keyboard
 }
 function showPopup(anchor) {
   const pop = document.getElementById('mpop');
-  pop.classList.remove('flip','show');
-  // measure after brief paint so offsetHeight is valid
+  pop.classList.remove('flip');
+  // Make visible off-screen first so inp.focus() works on iOS (needs visible element)
+  pop.style.top = '-999px'; pop.style.left = '0px';
+  pop.classList.add('show');
   requestAnimationFrame(() => {
     const rect  = anchor ? anchor.getBoundingClientRect() : {top:200,bottom:230,left:14,width:22};
     const popW  = 210;
     const popH  = pop.offsetHeight || 82;
     const vvH   = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
     const mg    = 8;
-    // arrow x relative to popup left
     let left  = Math.max(mg, Math.min(rect.left - 10, window.innerWidth - popW - mg));
     let aw    = Math.max(8, Math.min(rect.left + rect.width/2 - left - 6, popW - 20));
-    // above or below?
     let top = rect.top - popH - mg - 4;
     if (top < mg) { top = rect.bottom + mg + 4; pop.classList.add('flip'); }
     top = Math.max(mg, Math.min(top, vvH - popH - mg));
     pop.style.left = left + 'px';
     pop.style.top  = top  + 'px';
     pop.style.setProperty('--aw', aw + 'px');
-    pop.classList.add('show');
   });
 }
 function hidePopup() {
@@ -605,6 +640,25 @@ function doConfirm() {
 function delRec(id) {
   if (!confirm('¿Eliminar?')) return;
   records=records.filter(r=>r.id!==id); save(); render();
+}
+let editingId = null;
+function editEntry(id) {
+  const r = records.find(r=>r.id===id); if (!r) return;
+  editingId = id;
+  document.getElementById('edit-amount').value = r.amount;
+  document.getElementById('edit-name').value = r.name || '';
+  openSheet('edit');
+  setTimeout(()=>document.getElementById('edit-amount').focus(), 300);
+}
+function saveEdit() {
+  const r = records.find(r=>r.id===editingId);
+  if (r) {
+    const amt = parseFloat(document.getElementById('edit-amount').value);
+    if (!isNaN(amt) && amt > 0) r.amount = amt;
+    r.name = document.getElementById('edit-name').value.trim();
+    save(); render();
+  }
+  closeSheet('edit'); editingId = null;
 }
 function addEntry() {
   const qi=document.getElementById('qi');
@@ -623,20 +677,52 @@ function addEntry() {
 function openSheet(n) {
   if (n==='hist') renderHist();
   if (n==='cal') { calMonth = new Date(viewDate+'T12:00:00'); renderCal(); }
+  if (n==='bank') renderBankSummary();
   if (n==='cfg') {
     document.getElementById('gh-tok').value = localStorage.getItem('gh_tok')||'';
     document.getElementById('gh-gid').value = localStorage.getItem('gh_gid')||'';
   }
   document.getElementById(n+'-ov').classList.add('open');
 }
+function renderBankSummary() {
+  const el = document.getElementById('bank-list');
+  const banks = {};
+  for (const r of records) {
+    const k = r.account || '(sin cuenta)';
+    if (!banks[k]) banks[k] = [];
+    banks[k].push(r);
+  }
+  const keys = Object.keys(banks).sort((a,b)=>a.localeCompare(b));
+  if (!keys.length) { el.innerHTML=`<div class="empty">Sin datos.</div>`; return; }
+  el.innerHTML = keys.map(bank => {
+    const latest = banks[bank].sort((a,b)=>b.createdAt-a.createdAt).slice(0,3);
+    const rows = latest.map(r => {
+      const {label} = displayDate(r.date);
+      const nm = r.name ? cap(r.name) : `<span style="color:var(--muted)">—</span>`;
+      const sc = (!r.com && r.tipo==='D') ? ' <span class="bsc">sc</span>' : '';
+      return `<div class="bk-row">
+        <span class="bt ${r.tipo}">${r.tipo}</span>
+        <span class="bk-amt">${fmt(r.amount)}${sc}</span>
+        <span class="bk-name">${nm}</span>
+        <span class="bk-meta">${label}</span>
+      </div>`;
+    }).join('');
+    return `<div class="bk-section"><div class="bk-head">${bank}</div>${rows}</div>`;
+  }).join('');
+}
 function closeSheet(n) {
   document.getElementById(n+'-ov').classList.remove('open');
 }
-['hist','cfg','cal'].forEach(n=>{
+['hist','cfg','cal','edit','bank'].forEach(n=>{
   document.getElementById(n+'-ov').addEventListener('click',e=>{
     if (e.target===document.getElementById(n+'-ov')) closeSheet(n);
   });
 });
+document.getElementById('btn-bank').addEventListener('click',()=>openSheet('bank'));
+document.getElementById('edit-ok').addEventListener('click', saveEdit);
+document.getElementById('edit-cancel').addEventListener('click',()=>closeSheet('edit'));
+document.getElementById('edit-amount').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('edit-name').focus();}});
+document.getElementById('edit-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveEdit();}});
 // Mini popup listeners
 document.getElementById('mpop-ok').addEventListener('click', doConfirm);
 document.getElementById('mpop-cancel').addEventListener('click', hidePopup);
