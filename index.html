@@ -333,10 +333,12 @@
   </div>
   <div class="filter-row">
     <button class="pill active" data-f="all">Todos</button>
-    <button class="pill" data-f="pending">Pendientes</button>
-    <button class="pill" data-f="confirmed">Confirmados</button>
-    <button class="pill" data-f="nocom">Sin comisión</button>
-    <button class="pill" data-f="com">Comisión</button>
+    <button class="pill" data-f="Banc. Nómina">Nómina</button>
+    <button class="pill" data-f="Banc. Digital">Digital</button>
+    <button class="pill" data-f="BBVA">BBVA</button>
+    <button class="pill" data-f="Invex">Invex</button>
+    <button class="pill" data-f="Mifel">Mifel</button>
+    <button class="pill" data-f="Banregio">Banregio</button>
   </div>
 </header>
 
@@ -511,11 +513,8 @@ function previewStr(p) {
 function getDayRecs() { return records.filter(r=>r.date===viewDate); }
 function getFiltered() {
   const base = getDayRecs();
-  if (activeFilter==='pending')   return base.filter(r=>!r.confirmed);
-  if (activeFilter==='confirmed') return base.filter(r=> r.confirmed);
-  if (activeFilter==='nocom')     return base.filter(r=>!r.com);
-  if (activeFilter==='com')       return base.filter(r=> r.com);
-  return base;
+  if (activeFilter==='all') return base;
+  return base.filter(r => r.account === activeFilter);
 }
 
 function renderHeader() {
@@ -565,7 +564,9 @@ function tapConfirm(id) {
   if (!r) return;
   if (r.confirmed) { r.confirmed=false; save(); render(); return; }
   pendingId = id;
-  document.getElementById('mpop-inp').value = r.name || '';
+  const inp = document.getElementById('mpop-inp');
+  inp.value = r.name || '';
+  inp.focus(); // must be synchronous within user gesture to trigger iOS keyboard
   const btn = document.querySelector(`#e-${id} .chk`);
   showPopup(btn);
 }
@@ -590,7 +591,6 @@ function showPopup(anchor) {
     pop.style.top  = top  + 'px';
     pop.style.setProperty('--aw', aw + 'px');
     pop.classList.add('show');
-    setTimeout(() => document.getElementById('mpop-inp').focus(), 80);
   });
 }
 function hidePopup() {
