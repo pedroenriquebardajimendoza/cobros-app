@@ -584,13 +584,12 @@ let syncTimer = null;
 // ── Cached DOM refs (avoid repeated getElementById) ──────────────────────────
 const $ = id => document.getElementById(id);
 const DOM = {};
-function cacheDom() {
-  ['date-label','date-sub','day-total','day-info','btn-next','list','preview',
-   'qi','btn-add','name-desc','name-custom','name-grid','name-inp',
-   'edit-amount','edit-name','leg-body','leg-arr','btn-theme','theme-val',
-   'sync-dot','gh-tok','gh-gid','cal-title','cal-next','cal-grid',
-   'hist-list'].forEach(id => { DOM[id] = $(id); });
-}
+// Cache immediately — script runs at end of body, all elements exist
+['date-label','date-sub','day-total','day-info','btn-next','list','preview',
+ 'qi','btn-add','name-desc','name-custom','name-grid','name-inp',
+ 'edit-amount','edit-name','leg-body','leg-arr','btn-theme','theme-val',
+ 'sync-dot','gh-tok','gh-gid','cal-title','cal-next','cal-grid',
+ 'hist-list'].forEach(id => { DOM[id] = $(id); });
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 let saveQueued = false;
@@ -778,7 +777,7 @@ function render() {
 function renderNow() { renderHeader(); renderList(); }
 
 // ── Event Delegation (replaces inline onclick) ───────────────────────────────
-DOM['list'] && document.getElementById('list').addEventListener('click', e => {
+DOM['list'].addEventListener('click', e => {
   const entry = e.target.closest('.entry');
   if (!entry) return;
   const id = entry.dataset.id;
@@ -856,7 +855,7 @@ function tapConfirm(id) {
   openSheet('name');
 }
 // Name grid uses event delegation
-DOM['name-grid'] && $('name-grid').addEventListener('click', e => {
+DOM['name-grid'].addEventListener('click', e => {
   const chip = e.target.closest('.name-chip');
   if (!chip) return;
   const name = chip.dataset.name;
@@ -1184,7 +1183,6 @@ async function autoSync() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-cacheDom();
 load();
 applyTheme(theme);
 renderNow(); // Synchronous first paint
