@@ -591,6 +591,9 @@ const DOM = {};
  'sync-dot','gh-tok','gh-gid','cal-title','cal-next','cal-grid',
  'hist-list'].forEach(id => { DOM[id] = $(id); });
 
+// ── Haptic feedback ─────────────────────────────────────────────────────────
+function haptic(ms=10){ if(navigator.vibrate) navigator.vibrate(ms); }
+
 // ── Storage ──────────────────────────────────────────────────────────────────
 let saveQueued = false;
 function save() {
@@ -784,6 +787,7 @@ DOM['list'].addEventListener('click', e => {
   const action = e.target.closest('[data-action]');
   if (!action) return;
   const act = action.dataset.action;
+  haptic();
   if (act === 'confirm') tapConfirm(id);
   else if (act === 'edit') editEntry(id);
   else if (act === 'del') delRec(id);
@@ -816,6 +820,7 @@ document.addEventListener('touchend', () => {
   if (swiping && swipeDx < -80) {
     const id = swipeEntry.dataset.id;
     if (id) {
+      haptic(20);
       swipeEntry.style.transition = 'all .2s';
       swipeEntry.style.transform = 'translateX(-100%)';
       swipeEntry.style.opacity = '0';
@@ -858,6 +863,7 @@ function tapConfirm(id) {
 DOM['name-grid'].addEventListener('click', e => {
   const chip = e.target.closest('.name-chip');
   if (!chip) return;
+  haptic();
   const name = chip.dataset.name;
   if (name === '__custom') { showCustomName(); return; }
   pickName(name);
@@ -902,6 +908,7 @@ function saveEdit() {
 function addEntry() {
   const qi = DOM['qi'];
   const p=parse(qi.value); if (!p) return;
+  haptic(15);
   records.unshift({id:uid(), tipo:p.tipo, amount:p.amount, account:p.account,
     name:'', com:p.com, date:viewDate, confirmed:false, createdAt:Date.now()});
   invalidateIndex(); save(); render();
@@ -966,8 +973,8 @@ $('hist-list').addEventListener('click', e => {
 function goDate(iso){closeSheet('hist');viewDate=iso;render();}
 
 // ── Date nav ─────────────────────────────────────────────────────────────────
-$('btn-prev').addEventListener('click',()=>{viewDate=shiftDate(viewDate,-1);render();});
-$('btn-next').addEventListener('click',()=>{if(viewDate<todayISO()){viewDate=shiftDate(viewDate,1);render();}});
+$('btn-prev').addEventListener('click',()=>{haptic();viewDate=shiftDate(viewDate,-1);render();});
+$('btn-next').addEventListener('click',()=>{if(viewDate<todayISO()){haptic();viewDate=shiftDate(viewDate,1);render();}});
 $('date-center').addEventListener('click',()=>openSheet('cal'));
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
@@ -1052,6 +1059,7 @@ $('btn-add').addEventListener('click',addEntry);
 document.querySelector('.filter-row').addEventListener('click', e => {
   const pill = e.target.closest('.pill');
   if (!pill) return;
+  haptic();
   activeFilter = pill.dataset.f;
   document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
   pill.classList.add('active');
