@@ -6,6 +6,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Cobros</title>
+  <link rel="preconnect" href="https://api.github.com" crossorigin>
+  <link rel="dns-prefetch" href="https://api.github.com">
   <style>
     [data-theme="dark"] {
       --bg:#111113; --surface:#1a1a1e; --surface2:#222226; --border:#2a2a2e;
@@ -383,7 +385,43 @@
       from{opacity:0;transform:translateY(-8px)}
       to{opacity:1;transform:translateY(0)}
     }
-    .entry{animation:fadeSlideIn .2s ease-out}
+    .entry{animation:fadeSlideIn .15s ease-out}
+
+    /* ── PERFORMANCE ── */
+    main{contain:content}
+    .entry{contain:layout style;will-change:auto}
+    .sheet-overlay{will-change:auto}
+    .sheet-overlay.open .sheet{will-change:transform}
+
+    /* ── SWIPE DELETE ── */
+    .entry{overflow:hidden;position:relative}
+    .entry-swipe-bg{
+      position:absolute;right:0;top:0;bottom:0;width:80px;
+      background:var(--red);display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:0.75rem;font-weight:700;letter-spacing:.02em;
+      opacity:0;transition:opacity .15s;pointer-events:none;
+    }
+    .entry.swiping .entry-swipe-bg{opacity:1}
+    .entry-inner{
+      display:flex;align-items:center;min-height:52px;
+      gap:12px;width:100%;background:var(--bg);
+      position:relative;z-index:1;
+      transition:transform .2s cubic-bezier(.4,.0,.2,1);
+    }
+    .entry.swiping .entry-inner{transition:none}
+
+    /* ── HAPTIC FEEDBACK ── */
+    @media(hover:none){
+      .pill:active,.name-chip:active,.chk:active,.nav-btn:active,.icon-btn:active{
+        transition-duration:0.05s;
+      }
+    }
+
+    /* ── SCROLL PERFORMANCE ── */
+    #list{
+      contain:content;
+      overflow-anchor:none;
+    }
   </style>
 </head>
 <body>
@@ -543,9 +581,27 @@ let theme = localStorage.getItem('theme') || 'dark';
 let pendingId = null;
 let syncTimer = null;
 
+// ── Cached DOM refs (avoid repeated getElementById) ──────────────────────────
+const $ = id => document.getElementById(id);
+const DOM = {};
+function cacheDom() {
+  ['date-label','date-sub','day-total','day-info','btn-next','list','preview',
+   'qi','btn-add','name-desc','name-custom','name-grid','name-inp',
+   'edit-amount','edit-name','leg-body','leg-arr','btn-theme','theme-val',
+   'sync-dot','gh-tok','gh-gid','cal-title','cal-next','cal-grid',
+   'hist-list'].forEach(id => { DOM[id] = $(id); });
+}
+
 // ── Storage ──────────────────────────────────────────────────────────────────
+let saveQueued = false;
 function save() {
-  localStorage.setItem('cobros_v2', JSON.stringify(records));
+  if (!saveQueued) {
+    saveQueued = true;
+    queueMicrotask(() => {
+      localStorage.setItem('cobros_v2', JSON.stringify(records));
+      saveQueued = false;
+    });
+  }
   scheduleSync();
 }
 function load() {
@@ -560,7 +616,9 @@ function load() {
 
 // ── Utils ────────────────────────────────────────────────────────────────────
 function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
-function fmt(n) { return new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'}).format(n); }
+// Cached formatter — avoid creating Intl object on every call
+const _fmt = new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN'});
+function fmt(n) { return _fmt.format(n); }
 function cap(s) { return s ? s.charAt(0).toUpperCase()+s.slice(1) : ''; }
 function todayISO() { return new Date().toISOString().slice(0,10); }
 function shiftDate(iso, d) {
@@ -568,24 +626,26 @@ function shiftDate(iso, d) {
   dt.setDate(dt.getDate()+d);
   return dt.toISOString().slice(0,10);
 }
+const MONTHS = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DAYS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
 function displayDate(iso) {
   const today = todayISO();
   const dt = new Date(iso+'T12:00:00');
-  const months = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  const days   = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  const str = `${dt.getDate()} de ${months[dt.getMonth()]}`;
+  const str = `${dt.getDate()} de ${MONTHS[dt.getMonth()]}`;
   const diff = Math.round((new Date(today+'T12:00:00') - dt) / 86400000);
   if (diff===0) return {label:'Hoy', sub:str};
   if (diff===1) return {label:'Ayer', sub:str};
-  if (diff<=6)  return {label:days[dt.getDay()], sub:str};
+  if (diff<=6)  return {label:DAYS[dt.getDay()], sub:str};
   return {label:str, sub:String(dt.getFullYear())};
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
+const PARSE_RE = /^([DdTt])\s*(\d+(?:\.\d+)?)\s*(.*)/;
+const SC_RE = /\bsc\b/;
 function parse(raw) {
   const t = raw.trim();
   if (!t) return null;
-  const m = t.match(/^([DdTt])\s*(\d+(?:\.\d+)?)\s*(.*)/);
+  const m = t.match(PARSE_RE);
   if (!m) return null;
   const tipo = m[1].toUpperCase();
   const amount = parseFloat(m[2]);
@@ -596,8 +656,8 @@ function parse(raw) {
       account=ACC[k]; name=rest.slice(k.length).trim(); break;
     }
   }
-  const sc = /\bsc\b/.test(name);
-  if (sc) name=name.replace(/\bsc\b/,'').trim();
+  const sc = SC_RE.test(name);
+  if (sc) name=name.replace(SC_RE,'').trim();
   return { tipo, amount, account, name, com: tipo==='D' && !sc };
 }
 function previewStr(p) {
@@ -608,7 +668,23 @@ function previewStr(p) {
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
-function getDayRecs() { return records.filter(r=>r.date===viewDate); }
+// Build a date→records index for O(1) day lookups instead of filtering all records
+let _dateIndex = null;
+let _dateIndexVer = 0;
+let _recordsVer = 0;
+function invalidateIndex() { _recordsVer++; }
+function getDateIndex() {
+  if (_dateIndex && _dateIndexVer === _recordsVer) return _dateIndex;
+  _dateIndex = {};
+  for (const r of records) {
+    const d = r.date || '?';
+    if (!_dateIndex[d]) _dateIndex[d] = [];
+    _dateIndex[d].push(r);
+  }
+  _dateIndexVer = _recordsVer;
+  return _dateIndex;
+}
+function getDayRecs() { return getDateIndex()[viewDate] || []; }
 function getFiltered() {
   const base = getDayRecs();
   if (activeFilter==='all') return base;
@@ -617,128 +693,223 @@ function getFiltered() {
 
 function renderHeader() {
   const {label,sub} = displayDate(viewDate);
-  document.getElementById('date-label').textContent = label;
-  document.getElementById('date-sub').textContent   = sub;
+  DOM['date-label'].textContent = label;
+  DOM['date-sub'].textContent   = sub;
   const recs = getDayRecs();
-  const total = recs.reduce((s,r)=>s+r.amount,0);
-  const conf  = recs.filter(r=>r.confirmed).length;
-  const pend  = recs.filter(r=>!r.confirmed).length;
-  document.getElementById('day-total').textContent = fmt(total);
-  document.getElementById('day-info').textContent  =
+  let total=0, conf=0, pend=0;
+  for (const r of recs) {
+    total += r.amount;
+    if (r.confirmed) conf++; else pend++;
+  }
+  DOM['day-total'].textContent = fmt(total);
+  DOM['day-info'].textContent  =
     recs.length===0 ? 'Sin entradas' :
     `${pend} pendiente${pend!==1?'s':''} · ${conf} confirmado${conf!==1?'s':''}`;
-  document.getElementById('btn-next').disabled = viewDate >= todayISO();
+  DOM['btn-next'].disabled = viewDate >= todayISO();
 }
 
+// Cache bank ranks — only recalculate when records change
+let _rankCache = null;
+let _rankVer = -1;
 function getBankRanks() {
+  if (_rankCache && _rankVer === _recordsVer) return _rankCache;
   const byBank = {};
   for (const r of records) {
     if (!r.account) continue;
     if (!byBank[r.account]) byBank[r.account] = [];
     byBank[r.account].push(r);
   }
-  const ranks = {};
+  _rankCache = {};
   for (const bank of Object.keys(byBank)) {
     byBank[bank].sort((a,b)=>b.createdAt-a.createdAt);
-    byBank[bank].slice(0,3).forEach((r,i) => { ranks[r.id] = i+1; });
+    const top = byBank[bank];
+    const len = Math.min(3, top.length);
+    for (let i=0;i<len;i++) _rankCache[top[i].id] = i+1;
   }
-  return ranks;
+  _rankVer = _recordsVer;
+  return _rankCache;
 }
 
+// Use DocumentFragment for batch DOM insertion
 function renderList() {
-  const el = document.getElementById('list');
+  const el = DOM['list'];
   const data = getFiltered().sort((a,b)=>b.createdAt-a.createdAt);
   if (!data.length) {
     el.innerHTML=`<div class="empty">${activeFilter==='all'?'Escribe abajo para añadir cobros.':'Sin cobros con este filtro.'}</div>`;
     return;
   }
   const ranks = getBankRanks();
-  el.innerHTML = data.map(r=>{
+  const frag = document.createDocumentFragment();
+  for (const r of data) {
+    const div = document.createElement('div');
+    div.className = 'entry' + (r.confirmed ? ' done' : '');
+    div.id = 'e-' + r.id;
+    div.dataset.id = r.id;
+
     const name = r.name?`<span class="en">${cap(r.name)}</span>`:'';
     const sc   = (!r.com && r.tipo==='D')?`<span class="bsc">sc</span>`:'';
     const rk   = ranks[r.id] ? `<span class="brank">${ranks[r.id]}</span>` : '';
-    return `<div class="entry ${r.confirmed?'done':''}" id="e-${r.id}">
-      <button class="chk ${r.confirmed?'on':''}" onclick="tapConfirm('${r.id}')">✓</button>
-      <div class="entry-body" onclick="editEntry('${r.id}')">
+    div.innerHTML = `<button class="chk ${r.confirmed?'on':''}" data-action="confirm">✓</button>
+      <div class="entry-body" data-action="edit">
         <span class="bt ${r.tipo}">${r.tipo}</span>
         <span class="ea">${fmt(r.amount)}</span>
         ${r.account?`<span class="ba">${r.account}</span>`:''}
         ${sc}${rk}
         ${name}
       </div>
-      <button class="btn-del" onclick="delRec('${r.id}')">✕</button>
-    </div>`;
-  }).join('');
+      <button class="btn-del" data-action="del">✕</button>`;
+    frag.appendChild(div);
+  }
+  el.textContent = ''; // Clear faster than innerHTML=''
+  el.appendChild(frag);
 }
 
-function render() { renderHeader(); renderList(); }
+// Debounced render via rAF to avoid double-renders in same frame
+let _renderRAF = 0;
+function render() {
+  if (_renderRAF) return;
+  _renderRAF = requestAnimationFrame(() => {
+    _renderRAF = 0;
+    renderHeader();
+    renderList();
+  });
+}
+// Immediate render for init
+function renderNow() { renderHeader(); renderList(); }
+
+// ── Event Delegation (replaces inline onclick) ───────────────────────────────
+DOM['list'] && document.getElementById('list').addEventListener('click', e => {
+  const entry = e.target.closest('.entry');
+  if (!entry) return;
+  const id = entry.dataset.id;
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+  const act = action.dataset.action;
+  if (act === 'confirm') tapConfirm(id);
+  else if (act === 'edit') editEntry(id);
+  else if (act === 'del') delRec(id);
+});
+
+// ── Swipe-to-delete (touch) ──────────────────────────────────────────────────
+let swipeEntry=null, swipeStartX=0, swipeStartY=0, swiping=false, swipeDx=0;
+document.getElementById('list').addEventListener('touchstart', e => {
+  const entry = e.target.closest('.entry');
+  if (!entry) return;
+  swipeEntry = entry;
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+  swiping = false; swipeDx = 0;
+}, {passive:true});
+document.addEventListener('touchmove', e => {
+  if (!swipeEntry) return;
+  const dx = e.touches[0].clientX - swipeStartX;
+  const dy = e.touches[0].clientY - swipeStartY;
+  if (!swiping && Math.abs(dy) > Math.abs(dx)) { swipeEntry=null; return; }
+  if (dx < -10) swiping = true;
+  if (!swiping) return;
+  swipeDx = Math.min(0, dx);
+  const inner = swipeEntry.querySelector('.entry-inner') || swipeEntry;
+  inner.style.transform = `translateX(${swipeDx}px)`;
+  if (swipeDx < -30) swipeEntry.classList.add('swiping');
+}, {passive:true});
+document.addEventListener('touchend', () => {
+  if (!swipeEntry) return;
+  if (swiping && swipeDx < -80) {
+    const id = swipeEntry.dataset.id;
+    if (id) {
+      swipeEntry.style.transition = 'all .2s';
+      swipeEntry.style.transform = 'translateX(-100%)';
+      swipeEntry.style.opacity = '0';
+      swipeEntry.style.maxHeight = '0';
+      setTimeout(() => {
+        records = records.filter(r=>r.id!==id);
+        invalidateIndex();
+        save(); render();
+      }, 200);
+    }
+  } else if (swiping) {
+    const inner = swipeEntry.querySelector('.entry-inner') || swipeEntry;
+    inner.style.transform = '';
+    swipeEntry.classList.remove('swiping');
+  }
+  swipeEntry=null; swiping=false; swipeDx=0;
+}, {passive:true});
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 const NAMES = ['marlon mexico','moises','raulito','cuenca','jcarlos','pesmex','idasbel','frankcabrera','kendry','nesty','betty','robin','gerardo','ismael','alguiennew'];
 
+// Pre-build name grid HTML once (it never changes)
+const NAME_GRID_HTML =
+  NAMES.map(n=>`<button class="name-chip" data-name="${n}">${cap(n)}</button>`).join('') +
+  `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
+  `<button class="name-chip skip" data-name="">Sin nombre</button>`;
+
 function tapConfirm(id) {
   const r = records.find(r=>r.id===id);
   if (!r) return;
-  if (r.confirmed) { r.confirmed=false; save(); render(); return; }
+  if (r.confirmed) { r.confirmed=false; invalidateIndex(); save(); render(); return; }
   pendingId = id;
-  document.getElementById('name-desc').textContent =
+  DOM['name-desc'].textContent =
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
-  document.getElementById('name-custom').style.display = 'none';
-  renderNameGrid();
+  DOM['name-custom'].style.display = 'none';
+  DOM['name-grid'].innerHTML = NAME_GRID_HTML;
   openSheet('name');
 }
-function renderNameGrid() {
-  document.getElementById('name-grid').innerHTML =
-    NAMES.map(n=>`<button class="name-chip" onclick="pickName('${n}')">${cap(n)}</button>`).join('') +
-    `<button class="name-chip add" onclick="showCustomName()">+ Otro</button>` +
-    `<button class="name-chip skip" onclick="pickName('')">Sin nombre</button>`;
-}
+// Name grid uses event delegation
+DOM['name-grid'] && $('name-grid').addEventListener('click', e => {
+  const chip = e.target.closest('.name-chip');
+  if (!chip) return;
+  const name = chip.dataset.name;
+  if (name === '__custom') { showCustomName(); return; }
+  pickName(name);
+});
+
 function pickName(name) {
   const r = records.find(r=>r.id===pendingId);
-  if (r) { r.name=name; r.confirmed=true; save(); render(); }
+  if (r) { r.name=name; r.confirmed=true; invalidateIndex(); save(); render(); }
   closeSheet('name'); pendingId=null;
 }
 function showCustomName() {
-  document.getElementById('name-custom').style.display = 'block';
-  setTimeout(()=>document.getElementById('name-inp').focus(), 100);
+  DOM['name-custom'].style.display = 'block';
+  setTimeout(()=>DOM['name-inp'].focus(), 100);
 }
 function confirmCustomName() {
-  pickName(document.getElementById('name-inp').value.trim());
-  document.getElementById('name-inp').value = '';
+  pickName(DOM['name-inp'].value.trim());
+  DOM['name-inp'].value = '';
 }
 function delRec(id) {
   if (!confirm('¿Eliminar?')) return;
-  records=records.filter(r=>r.id!==id); save(); render();
+  records=records.filter(r=>r.id!==id); invalidateIndex(); save(); render();
 }
 let editingId = null;
 function editEntry(id) {
   const r = records.find(r=>r.id===id); if (!r) return;
   editingId = id;
-  document.getElementById('edit-amount').value = r.amount;
-  document.getElementById('edit-name').value = r.name || '';
+  DOM['edit-amount'].value = r.amount;
+  DOM['edit-name'].value = r.name || '';
   openSheet('edit');
-  setTimeout(()=>document.getElementById('edit-amount').focus(), 300);
+  setTimeout(()=>DOM['edit-amount'].focus(), 300);
 }
 function saveEdit() {
   const r = records.find(r=>r.id===editingId);
   if (r) {
-    const amt = parseFloat(document.getElementById('edit-amount').value);
+    const amt = parseFloat(DOM['edit-amount'].value);
     if (!isNaN(amt) && amt > 0) r.amount = amt;
-    r.name = document.getElementById('edit-name').value.trim();
-    save(); render();
+    r.name = DOM['edit-name'].value.trim();
+    invalidateIndex(); save(); render();
   }
   closeSheet('edit'); editingId = null;
 }
 function addEntry() {
-  const qi=document.getElementById('qi');
+  const qi = DOM['qi'];
   const p=parse(qi.value); if (!p) return;
   records.unshift({id:uid(), tipo:p.tipo, amount:p.amount, account:p.account,
     name:'', com:p.com, date:viewDate, confirmed:false, createdAt:Date.now()});
-  save(); render();
+  invalidateIndex(); save(); render();
   qi.value=''; qi.className='';
-  document.getElementById('preview').textContent='D = depósito (cobra comisión) · T = transferencia · sc = sin comisión';
-  document.getElementById('preview').className='';
-  document.getElementById('btn-add').disabled=true;
+  DOM['preview'].textContent='D = depósito (cobra comisión) · T = transferencia · sc = sin comisión';
+  DOM['preview'].className='';
+  DOM['btn-add'].disabled=true;
   qi.focus();
 }
 
@@ -747,51 +918,58 @@ function openSheet(n) {
   if (n==='hist') renderHist();
   if (n==='cal') { calMonth = new Date(viewDate+'T12:00:00'); renderCal(); }
   if (n==='cfg') {
-    document.getElementById('gh-tok').value = localStorage.getItem('gh_tok')||'';
-    document.getElementById('gh-gid').value = localStorage.getItem('gh_gid')||'';
+    DOM['gh-tok'].value = localStorage.getItem('gh_tok')||'';
+    DOM['gh-gid'].value = localStorage.getItem('gh_gid')||'';
   }
-  document.getElementById(n+'-ov').classList.add('open');
+  $(n+'-ov').classList.add('open');
 }
 function closeSheet(n) {
-  document.getElementById(n+'-ov').classList.remove('open');
+  $(n+'-ov').classList.remove('open');
 }
 ['name','hist','cfg','cal','edit'].forEach(n=>{
-  document.getElementById(n+'-ov').addEventListener('click',e=>{
-    if (e.target===document.getElementById(n+'-ov')) closeSheet(n);
-  });
+  const ov = $(n+'-ov');
+  ov.addEventListener('click',e=>{ if (e.target===ov) closeSheet(n); });
 });
-document.getElementById('edit-ok').addEventListener('click', saveEdit);
-document.getElementById('edit-cancel').addEventListener('click',()=>closeSheet('edit'));
-document.getElementById('edit-amount').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();document.getElementById('edit-name').focus();}});
-document.getElementById('edit-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveEdit();}});
-document.getElementById('name-custom-ok').addEventListener('click', confirmCustomName);
-document.getElementById('name-inp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmCustomName();}});
-document.getElementById('btn-hist').addEventListener('click',()=>openSheet('hist'));
-document.getElementById('btn-cfg').addEventListener('click',()=>openSheet('cfg'));
+$('edit-ok').addEventListener('click', saveEdit);
+$('edit-cancel').addEventListener('click',()=>closeSheet('edit'));
+$('edit-amount').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();DOM['edit-name'].focus();}});
+$('edit-name').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();saveEdit();}});
+$('name-custom-ok').addEventListener('click', confirmCustomName);
+$('name-inp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmCustomName();}});
+$('btn-hist').addEventListener('click',()=>openSheet('hist'));
+$('btn-cfg').addEventListener('click',()=>openSheet('cfg'));
 
 function renderHist() {
-  const el=document.getElementById('hist-list');
-  const byDate={};
-  records.forEach(r=>{(byDate[r.date||'?']=byDate[r.date||'?']||[]).push(r);});
-  const dates=Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  const el = DOM['hist-list'];
+  const idx = getDateIndex();
+  const dates = Object.keys(idx).filter(d=>d!=='?').sort((a,b)=>b.localeCompare(a));
   if (!dates.length){el.innerHTML=`<div class="empty">Sin historial.</div>`;return;}
-  el.innerHTML=dates.map(iso=>{
-    const recs=byDate[iso];
-    const total=recs.reduce((s,r)=>s+r.amount,0);
-    const conf=recs.filter(r=>r.confirmed).length;
-    const {label,sub}=displayDate(iso);
-    return `<div class="hist-row" onclick="goDate('${iso}')">
+  // Build with array join (faster than repeated string concat)
+  const parts = [];
+  for (const iso of dates) {
+    const recs = idx[iso];
+    let total=0, conf=0;
+    for (const r of recs) { total+=r.amount; if(r.confirmed) conf++; }
+    const {label,sub} = displayDate(iso);
+    parts.push(`<div class="hist-row" data-iso="${iso}">
       <div><div class="hr-date">${label}</div><div class="hr-sub">${sub}</div></div>
       <div><div class="hr-total">${fmt(total)}</div><div class="hr-info">${conf}/${recs.length} conf.</div></div>
-    </div>`;
-  }).join('');
+    </div>`);
+  }
+  el.innerHTML = parts.join('');
 }
+// History delegation
+$('hist-list').addEventListener('click', e => {
+  const row = e.target.closest('.hist-row');
+  if (!row) return;
+  goDate(row.dataset.iso);
+});
 function goDate(iso){closeSheet('hist');viewDate=iso;render();}
 
 // ── Date nav ─────────────────────────────────────────────────────────────────
-document.getElementById('btn-prev').addEventListener('click',()=>{viewDate=shiftDate(viewDate,-1);render();});
-document.getElementById('btn-next').addEventListener('click',()=>{if(viewDate<todayISO()){viewDate=shiftDate(viewDate,1);render();}});
-document.getElementById('date-center').addEventListener('click',()=>openSheet('cal'));
+$('btn-prev').addEventListener('click',()=>{viewDate=shiftDate(viewDate,-1);render();});
+$('btn-next').addEventListener('click',()=>{if(viewDate<todayISO()){viewDate=shiftDate(viewDate,1);render();}});
+$('date-center').addEventListener('click',()=>openSheet('cal'));
 
 // ── Calendar ──────────────────────────────────────────────────────────────────
 let calMonth = new Date();
@@ -800,18 +978,18 @@ const CAL_MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Ag
 function renderCal() {
   const y = calMonth.getFullYear();
   const m = calMonth.getMonth();
-  document.getElementById('cal-title').textContent = `${CAL_MONTHS[m]} ${y}`;
+  DOM['cal-title'].textContent = `${CAL_MONTHS[m]} ${y}`;
   const now = new Date();
-  document.getElementById('cal-next').disabled =
+  DOM['cal-next'].disabled =
     y > now.getFullYear() || (y === now.getFullYear() && m >= now.getMonth());
 
   const today = todayISO();
   const hasDates = new Set(records.map(r=>r.date));
-  const firstDay = (new Date(y,m,1).getDay()+6)%7; // Mon=0
+  const firstDay = (new Date(y,m,1).getDay()+6)%7;
   const total = new Date(y,m+1,0).getDate();
 
-  let html='';
-  for(let i=0;i<firstDay;i++) html+=`<div class="cal-cell empty"></div>`;
+  const parts = [];
+  for(let i=0;i<firstDay;i++) parts.push(`<div class="cal-cell empty"></div>`);
   for(let d=1;d<=total;d++){
     const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const cls=['cal-cell',
@@ -820,75 +998,88 @@ function renderCal() {
       iso===viewDate&&iso!==today?'is-sel':'',
       hasDates.has(iso)?'has-data':'',
     ].filter(Boolean).join(' ');
-    const fn = iso<=today ? `onclick="calGo('${iso}')"` : '';
-    html+=`<div class="${cls}" ${fn}>${d}</div>`;
+    const attr = iso<=today ? `data-iso="${iso}"` : '';
+    parts.push(`<div class="${cls}" ${attr}>${d}</div>`);
   }
-  document.getElementById('cal-grid').innerHTML=html;
+  DOM['cal-grid'].innerHTML = parts.join('');
 }
 
+// Calendar delegation
+$('cal-grid').addEventListener('click', e => {
+  const cell = e.target.closest('.cal-cell');
+  if (!cell || !cell.dataset.iso) return;
+  calGo(cell.dataset.iso);
+});
 function calGo(iso){ viewDate=iso; closeSheet('cal'); render(); }
 
-document.getElementById('cal-prev').addEventListener('click',()=>{
+$('cal-prev').addEventListener('click',()=>{
   calMonth.setMonth(calMonth.getMonth()-1); renderCal();
 });
-document.getElementById('cal-next').addEventListener('click',()=>{
+$('cal-next').addEventListener('click',()=>{
   const now=new Date();
   if(calMonth.getFullYear()<now.getFullYear()||(calMonth.getFullYear()===now.getFullYear()&&calMonth.getMonth()<now.getMonth())){
     calMonth.setMonth(calMonth.getMonth()+1); renderCal();
   }
 });
 
-// ── Input ─────────────────────────────────────────────────────────────────────
-const qi=document.getElementById('qi');
+// ── Input (debounced preview) ────────────────────────────────────────────────
+let _inputRAF = 0;
+const qi = DOM['qi'] || $('qi');
 qi.addEventListener('input',()=>{
-  const p=parse(qi.value);
-  const prev=document.getElementById('preview');
-  const btn=document.getElementById('btn-add');
-  if (!qi.value.trim()){
-    qi.className='';prev.className='';
-    prev.textContent='D = depósito (cobra comisión) · T = transferencia · sc = sin comisión';
-    btn.disabled=true;
-  } else if (p){
-    qi.className='ok';prev.className='ok';prev.textContent=previewStr(p);btn.disabled=false;
-  } else {
-    qi.className='';prev.className='';
-    prev.textContent='Formato: D/T + monto + cuenta  (ej: D500 n · T300 d)';
-    btn.disabled=true;
-  }
+  if (_inputRAF) cancelAnimationFrame(_inputRAF);
+  _inputRAF = requestAnimationFrame(() => {
+    _inputRAF = 0;
+    const p=parse(qi.value);
+    const prev=DOM['preview'];
+    const btn=DOM['btn-add'];
+    if (!qi.value.trim()){
+      qi.className='';prev.className='';
+      prev.textContent='D = depósito (cobra comisión) · T = transferencia · sc = sin comisión';
+      btn.disabled=true;
+    } else if (p){
+      qi.className='ok';prev.className='ok';prev.textContent=previewStr(p);btn.disabled=false;
+    } else {
+      qi.className='';prev.className='';
+      prev.textContent='Formato: D/T + monto + cuenta  (ej: D500 n · T300 d)';
+      btn.disabled=true;
+    }
+  });
 });
 qi.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addEntry();}});
-document.getElementById('btn-add').addEventListener('click',addEntry);
+$('btn-add').addEventListener('click',addEntry);
 
 // ── Filters ───────────────────────────────────────────────────────────────────
-document.querySelectorAll('.pill').forEach(p=>{
-  p.addEventListener('click',()=>{
-    activeFilter=p.dataset.f;
-    document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
-    p.classList.add('active'); renderList();
-  });
+// Use delegation on filter row instead of per-pill listeners
+document.querySelector('.filter-row').addEventListener('click', e => {
+  const pill = e.target.closest('.pill');
+  if (!pill) return;
+  activeFilter = pill.dataset.f;
+  document.querySelectorAll('.pill').forEach(x=>x.classList.remove('active'));
+  pill.classList.add('active');
+  renderList();
 });
 
 // ── Legend ────────────────────────────────────────────────────────────────────
-document.getElementById('leg-toggle').addEventListener('click',()=>{
-  const b=document.getElementById('leg-body');
+$('leg-toggle').addEventListener('click',()=>{
+  const b=DOM['leg-body'];
   const open=b.style.display!=='none';
   b.style.display=open?'none':'grid';
-  document.getElementById('leg-arr').textContent=open?'▾':'▴';
+  DOM['leg-arr'].textContent=open?'▾':'▴';
 });
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 function applyTheme(t){
   theme=t; document.documentElement.dataset.theme=t;
-  document.getElementById('btn-theme').textContent=t==='dark'?'☀️':'🌙';
-  document.getElementById('theme-val').textContent=t==='dark'?'Oscuro':'Claro';
+  DOM['btn-theme'].textContent=t==='dark'?'☀️':'🌙';
+  DOM['theme-val'].textContent=t==='dark'?'Oscuro':'Claro';
   localStorage.setItem('theme',t);
 }
-document.getElementById('btn-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
-document.getElementById('row-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
+$('btn-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
+$('row-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
 
 // ── GitHub Gist Sync ──────────────────────────────────────────────────────────
 const GFILE='cobros-data.json';
-function setSyncDot(s){document.getElementById('sync-dot').className=s;}
+function setSyncDot(s){DOM['sync-dot'].className=s;}
 
 async function doSync(){
   const token=localStorage.getItem('gh_tok'); if(!token) return;
@@ -907,7 +1098,7 @@ async function doSync(){
         gid=r.id;
       }
       localStorage.setItem('gh_gid',gid);
-      document.getElementById('gh-gid').value=gid;
+      DOM['gh-gid'].value=gid;
     } else {
       await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',headers:h,
         body:JSON.stringify({files:{[GFILE]:{content:body}}})});
@@ -917,8 +1108,8 @@ async function doSync(){
 }
 
 async function pullSync(){
-  const tok=(document.getElementById('gh-tok').value.trim()||localStorage.getItem('gh_tok'));
-  const gid=(document.getElementById('gh-gid').value.trim()||localStorage.getItem('gh_gid'));
+  const tok=(DOM['gh-tok'].value.trim()||localStorage.getItem('gh_tok'));
+  const gid=(DOM['gh-gid'].value.trim()||localStorage.getItem('gh_gid'));
   if (!tok){alert('Ingresa tu GitHub Token.');return;}
   if (tok) localStorage.setItem('gh_tok',tok);
   if (gid) localStorage.setItem('gh_gid',gid);
@@ -936,14 +1127,15 @@ async function pullSync(){
     const content=j.files?.[GFILE]?.content;
     if (!content) throw new Error('sin datos');
     records=JSON.parse(content);
+    invalidateIndex();
     localStorage.setItem('cobros_v2',JSON.stringify(records));
     setSyncDot('synced'); render(); closeSheet('cfg');
   } catch(e){ setSyncDot('error'); alert('Error: '+e.message); }
 }
 
 function pushSync(){
-  const tok=document.getElementById('gh-tok').value.trim();
-  const gid=document.getElementById('gh-gid').value.trim();
+  const tok=DOM['gh-tok'].value.trim();
+  const gid=DOM['gh-gid'].value.trim();
   if (tok) localStorage.setItem('gh_tok',tok);
   if (gid) localStorage.setItem('gh_gid',gid);
   doSync();
@@ -955,11 +1147,11 @@ function scheduleSync(){
   syncTimer=setTimeout(doSync,3000);
 }
 
-document.getElementById('btn-push').addEventListener('click',pushSync);
-document.getElementById('btn-pull').addEventListener('click',pullSync);
-document.getElementById('btn-clear').addEventListener('click',()=>{
+$('btn-push').addEventListener('click',pushSync);
+$('btn-pull').addEventListener('click',pullSync);
+$('btn-clear').addEventListener('click',()=>{
   if(confirm('¿Borrar TODOS los datos? No se puede deshacer.')){
-    records=[]; localStorage.removeItem('cobros_v2'); render(); closeSheet('cfg');
+    records=[]; invalidateIndex(); localStorage.removeItem('cobros_v2'); render(); closeSheet('cfg');
   }
 });
 
@@ -981,10 +1173,10 @@ async function autoSync() {
     const content = j.files?.[GFILE]?.content;
     if (!content){setSyncDot('error');return;}
     const remote = JSON.parse(content);
-    // Merge: union by ID — remote overwrites local, local-only records are kept
     const map = new Map(records.map(r=>[r.id,r]));
     for (const r of remote) map.set(r.id,r);
     records = [...map.values()].sort((a,b)=>b.createdAt-a.createdAt);
+    invalidateIndex();
     localStorage.setItem('cobros_v2',JSON.stringify(records));
     setSyncDot('synced');
     render();
@@ -992,24 +1184,31 @@ async function autoSync() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+cacheDom();
 load();
 applyTheme(theme);
-render();
-autoSync(); // pull from Gist every time the app opens
+renderNow(); // Synchronous first paint
+autoSync();
 
 // ── Keyboard fix (iOS Safari + Chrome/Brave) ───────────────────────────────────
-// WKWebView (iOS Chrome/Brave) scrolls the visual viewport to focus the input,
-// making content disappear. We counteract by:
-//   1. Resizing body to the visible height (vv.height)
-//   2. Translating body down by vv.offsetTop to neutralise any native scroll
 if (window.visualViewport) {
+  let _vpRAF = 0;
   function onViewport() {
-    const vv = window.visualViewport;
-    document.body.style.height = vv.height + 'px';
-    document.body.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+    if (_vpRAF) return;
+    _vpRAF = requestAnimationFrame(() => {
+      _vpRAF = 0;
+      const vv = window.visualViewport;
+      document.body.style.height = vv.height + 'px';
+      document.body.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+    });
   }
-  window.visualViewport.addEventListener('resize', onViewport);
-  window.visualViewport.addEventListener('scroll', onViewport);
+  window.visualViewport.addEventListener('resize', onViewport, {passive:true});
+  window.visualViewport.addEventListener('scroll', onViewport, {passive:true});
+}
+
+// ── Service Worker registration (offline support) ────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
 </script>
 </body>
