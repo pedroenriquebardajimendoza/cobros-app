@@ -468,9 +468,6 @@
       transition:all .3s ease;pointer-events:none;
     }
     .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
-    .add-step{display:none;padding:0 20px 8px}
-    .add-step.active{display:block}
-    .add-step-title{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
     .add-type-row{display:flex;gap:10px;margin-bottom:12px}
     .add-type-btn{
       flex:1;padding:14px;border-radius:12px;
@@ -496,7 +493,7 @@
       transition:all .2s cubic-bezier(.34,1.56,.64,1);
     }
     .add-sc-toggle.on{background:var(--sin-bg);border-color:var(--sin-fg);color:var(--sin-fg)}
-    .add-amount-wrap{display:flex;align-items:center;gap:10px}
+    .add-amount-wrap{display:flex;align-items:center;gap:10px;margin-top:12px}
     .add-amount-wrap input{
       flex:1;background:var(--surface2);border:1.5px solid var(--border-strong);
       border-radius:14px;color:var(--text);font-size:1.3rem;font-weight:800;
@@ -506,21 +503,8 @@
     }
     .add-amount-wrap input:focus{border-color:var(--accent);box-shadow:var(--glow)}
     .add-amount-wrap input::placeholder{color:var(--muted);font-weight:500;font-size:1rem}
-    .add-summary{
-      margin-top:10px;padding:10px 14px;
-      background:var(--surface2);border-radius:12px;border:1px solid var(--border);
-      font-size:0.78rem;color:var(--text-2);font-weight:500;text-align:center;
-      min-height:38px;display:flex;align-items:center;justify-content:center;
-    }
-    .add-nav{display:flex;gap:10px;padding:0 20px 4px}
-    .add-nav-back{
-      flex:1;padding:14px;border-radius:12px;border:1.5px solid var(--border-strong);
-      background:transparent;color:var(--text-2);font-size:0.85rem;font-weight:600;
-      cursor:pointer;transition:all .15s;
-    }
-    .add-nav-back:active{background:var(--surface2);transform:scale(.97)}
     .add-nav-ok{
-      flex:2;padding:14px;border-radius:12px;border:none;
+      width:100%;margin-top:12px;padding:14px;border-radius:12px;border:none;
       background:var(--green);color:#fff;font-size:0.85rem;font-weight:700;
       cursor:pointer;transition:all .2s cubic-bezier(.34,1.56,.64,1);
       box-shadow:0 3px 12px rgba(48,209,88,.3);
@@ -591,9 +575,7 @@
     <div class="s-handle"></div>
     <div class="s-title" id="add-title">Nuevo cobro</div>
 
-    <!-- Step 1: select type + SC -->
-    <div class="add-step active" id="add-step-1">
-      <div class="add-step-title">Tipo de operación</div>
+    <div style="padding:0 20px 8px">
       <div class="add-type-row">
         <button class="add-type-btn" data-tipo="D" id="add-tipo-d">
           <span class="add-type-letter">D</span>
@@ -607,21 +589,11 @@
       <div class="add-sc-row">
         <button class="add-sc-toggle" id="add-sc">SC — Sin comisión</button>
       </div>
-    </div>
-
-    <!-- Step 2: amount -->
-    <div class="add-step" id="add-step-2">
-      <div class="add-step-title">Monto</div>
       <div class="add-amount-wrap">
-        <input id="add-amount" type="number" inputmode="decimal" placeholder="0.00"
+        <input id="add-amount" type="number" inputmode="decimal" placeholder="Monto"
           autocomplete="off" step="any" min="0">
       </div>
-      <div class="add-summary" id="add-summary"></div>
-    </div>
-
-    <div class="add-nav">
-      <button class="add-nav-back" id="add-back">Atrás</button>
-      <button class="add-nav-ok" id="add-next">Siguiente</button>
+      <button class="add-nav-ok" id="add-save" disabled>Guardar</button>
     </div>
   </div>
 </div>
@@ -1064,37 +1036,21 @@ function saveEdit() {
   }
   closeSheet('edit'); editingId = null;
 }
-// ── Guided Add Flow ─────────────────────────────────────────────────────────
-let addStep = 1;
+// ── Add Flow ────────────────────────────────────────────────────────────────
 let addData = {account:'', tipo:'', sc:false, amount:0};
 
 function resetAddFlow() {
-  addStep = 1;
   addData = {account: activeFilter, tipo:'', sc:false, amount:0};
-  showAddStep(1);
   $('add-title').textContent = addData.account;
   $('add-sc').classList.remove('on');
   $('add-tipo-d').className = 'add-type-btn';
   $('add-tipo-t').className = 'add-type-btn';
   $('add-amount').value = '';
-  $('add-summary').textContent = '';
-  $('add-next').textContent = 'Siguiente';
-  $('add-next').disabled = true;
-  $('add-back').style.display = 'none';
+  $('add-save').disabled = true;
 }
 
-function showAddStep(n) {
-  for (let i=1;i<=2;i++) $('add-step-'+i).classList.toggle('active', i===n);
-  $('add-back').style.display = n > 1 ? '' : 'none';
-  $('add-next').textContent = n === 2 ? 'Guardar' : 'Siguiente';
-  addStep = n;
-}
-
-function updateAddSummary() {
-  const tipo = addData.tipo === 'D' ? 'Depósito' : 'Transferencia';
-  const sc = addData.sc && addData.tipo === 'D' ? ' · sin com.' : addData.tipo === 'D' ? ' · cobra com.' : '';
-  const amt = addData.amount > 0 ? ` · ${fmt(addData.amount)}` : '';
-  $('add-summary').textContent = `${tipo}${sc} · ${addData.account}${amt}`;
+function checkAddReady() {
+  $('add-save').disabled = !(addData.tipo && addData.amount > 0);
 }
 
 $('add-tipo-d').addEventListener('click', () => {
@@ -1102,7 +1058,7 @@ $('add-tipo-d').addEventListener('click', () => {
   addData.tipo = 'D';
   $('add-tipo-d').className = 'add-type-btn sel-d';
   $('add-tipo-t').className = 'add-type-btn';
-  $('add-next').disabled = false;
+  checkAddReady();
 });
 $('add-tipo-t').addEventListener('click', () => {
   haptic();
@@ -1111,7 +1067,7 @@ $('add-tipo-t').addEventListener('click', () => {
   $('add-tipo-d').className = 'add-type-btn';
   $('add-sc').classList.remove('on');
   addData.sc = false;
-  $('add-next').disabled = false;
+  checkAddReady();
 });
 $('add-sc').addEventListener('click', () => {
   haptic();
@@ -1122,35 +1078,16 @@ $('add-sc').addEventListener('click', () => {
 $('add-amount').addEventListener('input', () => {
   const v = parseFloat($('add-amount').value);
   addData.amount = isNaN(v) ? 0 : v;
-  $('add-next').disabled = !(addData.amount > 0);
-  updateAddSummary();
+  checkAddReady();
 });
 $('add-amount').addEventListener('keydown', e => {
   if (e.key === 'Enter') { e.preventDefault(); finishAdd(); }
 });
 
-$('add-next').addEventListener('click', () => {
-  haptic();
-  if (addStep === 1 && addData.tipo) {
-    showAddStep(2);
-    $('add-next').disabled = true;
-    updateAddSummary();
-    setTimeout(() => $('add-amount').focus(), 200);
-  } else if (addStep === 2) {
-    finishAdd();
-  }
-});
-
-$('add-back').addEventListener('click', () => {
-  haptic();
-  if (addStep === 2) {
-    showAddStep(1);
-    $('add-next').disabled = !addData.tipo;
-  }
-});
+$('add-save').addEventListener('click', () => { haptic(); finishAdd(); });
 
 function finishAdd() {
-  if (addData.amount <= 0) return;
+  if (!addData.tipo || addData.amount <= 0) return;
   haptic(15);
   const com = addData.tipo === 'D' && !addData.sc;
   records.unshift({id:uid(), tipo:addData.tipo, amount:addData.amount, account:addData.account,
@@ -1162,7 +1099,7 @@ function finishAdd() {
 $('fab-add').addEventListener('click', () => {
   haptic();
   if (activeFilter === 'all') {
-    showToast('Selecciona un banco arriba primero', 'warn');
+    showToast('Selecciona un banco arriba primero');
     return;
   }
   resetAddFlow();
