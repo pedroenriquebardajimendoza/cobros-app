@@ -460,21 +460,17 @@
       transition:all .2s cubic-bezier(.34,1.56,.64,1);
     }
     .fab:active{transform:scale(.88)}
+    .toast{
+      position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
+      background:var(--surface2);color:var(--text);border:1px solid var(--border-strong);
+      padding:10px 20px;border-radius:12px;font-size:.82rem;font-weight:500;
+      box-shadow:var(--shadow-md);z-index:999;opacity:0;
+      transition:all .3s ease;pointer-events:none;
+    }
+    .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
     .add-step{display:none;padding:0 20px 8px}
     .add-step.active{display:block}
     .add-step-title{font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:10px}
-    .add-banks{display:flex;flex-wrap:wrap;gap:8px}
-    .add-bank-chip{
-      padding:10px 18px;border-radius:12px;
-      border:1.5px solid var(--border-strong);background:var(--surface2);
-      color:var(--text);font-size:0.82rem;font-weight:500;
-      cursor:pointer;white-space:nowrap;
-      transition:all .2s cubic-bezier(.34,1.56,.64,1);
-    }
-    .add-bank-chip:active,.add-bank-chip.sel{
-      background:var(--accent);color:#fff;border-color:var(--accent);
-      box-shadow:0 4px 16px rgba(10,132,255,.3);
-    }
     .add-type-row{display:flex;gap:10px;margin-bottom:12px}
     .add-type-btn{
       flex:1;padding:14px;border-radius:12px;
@@ -587,6 +583,7 @@
 </main>
 
 <button class="fab" id="fab-add">+</button>
+<div class="toast" id="toast"></div>
 
 <!-- ADD FLOW SHEET -->
 <div class="sheet-overlay" id="add-ov">
@@ -594,14 +591,8 @@
     <div class="s-handle"></div>
     <div class="s-title" id="add-title">Nuevo cobro</div>
 
-    <!-- Step 1: select bank -->
+    <!-- Step 1: select type + SC -->
     <div class="add-step active" id="add-step-1">
-      <div class="add-step-title">Selecciona la cuenta</div>
-      <div class="add-banks" id="add-bank-grid"></div>
-    </div>
-
-    <!-- Step 2: select type + SC -->
-    <div class="add-step" id="add-step-2">
       <div class="add-step-title">Tipo de operación</div>
       <div class="add-type-row">
         <button class="add-type-btn" data-tipo="D" id="add-tipo-d">
@@ -618,8 +609,8 @@
       </div>
     </div>
 
-    <!-- Step 3: amount -->
-    <div class="add-step" id="add-step-3">
+    <!-- Step 2: amount -->
+    <div class="add-step" id="add-step-2">
       <div class="add-step-title">Monto</div>
       <div class="add-amount-wrap">
         <input id="add-amount" type="number" inputmode="decimal" placeholder="0.00"
@@ -783,6 +774,14 @@ const DOM = {};
 
 // ── Haptic feedback ─────────────────────────────────────────────────────────
 function haptic(ms=10){ if(navigator.vibrate) navigator.vibrate(ms); }
+let _toastTimer;
+function showToast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
 
 // ── Storage ──────────────────────────────────────────────────────────────────
 let saveQueued = false;
@@ -1071,9 +1070,9 @@ let addData = {account:'', tipo:'', sc:false, amount:0};
 
 function resetAddFlow() {
   addStep = 1;
-  addData = {account:'', tipo:'', sc:false, amount:0};
+  addData = {account: activeFilter, tipo:'', sc:false, amount:0};
   showAddStep(1);
-  $('add-title').textContent = 'Nuevo cobro';
+  $('add-title').textContent = addData.account;
   $('add-sc').classList.remove('on');
   $('add-tipo-d').className = 'add-type-btn';
   $('add-tipo-t').className = 'add-type-btn';
@@ -1082,19 +1081,12 @@ function resetAddFlow() {
   $('add-next').textContent = 'Siguiente';
   $('add-next').disabled = true;
   $('add-back').style.display = 'none';
-  renderAddBanks();
-}
-
-function renderAddBanks() {
-  $('add-bank-grid').innerHTML = banks.map(b =>
-    `<button class="add-bank-chip" data-bank="${b.name}">${b.label}</button>`
-  ).join('');
 }
 
 function showAddStep(n) {
-  for (let i=1;i<=3;i++) $('add-step-'+i).classList.toggle('active', i===n);
+  for (let i=1;i<=2;i++) $('add-step-'+i).classList.toggle('active', i===n);
   $('add-back').style.display = n > 1 ? '' : 'none';
-  $('add-next').textContent = n === 3 ? 'Guardar' : 'Siguiente';
+  $('add-next').textContent = n === 2 ? 'Guardar' : 'Siguiente';
   addStep = n;
 }
 
@@ -1104,16 +1096,6 @@ function updateAddSummary() {
   const amt = addData.amount > 0 ? ` · ${fmt(addData.amount)}` : '';
   $('add-summary').textContent = `${tipo}${sc} · ${addData.account}${amt}`;
 }
-
-$('add-bank-grid').addEventListener('click', e => {
-  const chip = e.target.closest('.add-bank-chip');
-  if (!chip) return;
-  haptic();
-  addData.account = chip.dataset.bank;
-  $('add-bank-grid').querySelectorAll('.add-bank-chip').forEach(c => c.classList.remove('sel'));
-  chip.classList.add('sel');
-  $('add-next').disabled = false;
-});
 
 $('add-tipo-d').addEventListener('click', () => {
   haptic();
@@ -1149,16 +1131,12 @@ $('add-amount').addEventListener('keydown', e => {
 
 $('add-next').addEventListener('click', () => {
   haptic();
-  if (addStep === 1 && addData.account) {
+  if (addStep === 1 && addData.tipo) {
     showAddStep(2);
-    $('add-next').disabled = true;
-    $('add-title').textContent = addData.account;
-  } else if (addStep === 2 && addData.tipo) {
-    showAddStep(3);
     $('add-next').disabled = true;
     updateAddSummary();
     setTimeout(() => $('add-amount').focus(), 200);
-  } else if (addStep === 3) {
+  } else if (addStep === 2) {
     finishAdd();
   }
 });
@@ -1167,12 +1145,7 @@ $('add-back').addEventListener('click', () => {
   haptic();
   if (addStep === 2) {
     showAddStep(1);
-    $('add-next').disabled = !addData.account;
-    $('add-title').textContent = 'Nuevo cobro';
-  } else if (addStep === 3) {
-    showAddStep(2);
     $('add-next').disabled = !addData.tipo;
-    $('add-title').textContent = addData.account;
   }
 });
 
@@ -1188,6 +1161,10 @@ function finishAdd() {
 
 $('fab-add').addEventListener('click', () => {
   haptic();
+  if (activeFilter === 'all') {
+    showToast('Selecciona un banco arriba primero', 'warn');
+    return;
+  }
   resetAddFlow();
   openSheet('add');
 });
