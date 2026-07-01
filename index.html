@@ -687,9 +687,9 @@
       <input class="set-inp" id="gh-tok" type="password" placeholder="Personal Access Token (scope: gist)" autocomplete="off">
       <input class="set-inp" id="gh-gid" type="text" placeholder="Gist ID (vacío = crear automático)" autocomplete="off">
     </div>
-    <button class="set-btn" id="btn-push">⬆ Subir a GitHub</button>
-    <button class="set-btn" id="btn-pull">⬇ Descargar de GitHub</button>
-    <button class="set-btn danger" id="btn-clear">🗑 Borrar todos los datos</button>
+    <button class="set-btn" id="btn-push">🔄 Sincronizar ahora</button>
+    <button class="set-btn" id="btn-pull">⬇ Volver a bajar de GitHub</button>
+    <button class="set-btn danger" id="btn-clear">🗑 Borrar datos de este dispositivo</button>
   </div>
 </div>
 
@@ -709,18 +709,21 @@ function loadBanks() {
   try { const v=JSON.parse(localStorage.getItem('cobros_banks')); if(Array.isArray(v)&&v.length) return v; } catch(e){}
   return DEFAULT_BANKS.map(b=>({...b}));
 }
+function normName(n){ return (typeof n==='string') ? {name:n, updatedAt:0} : n; }
 function loadNames() {
-  try { const v=JSON.parse(localStorage.getItem('cobros_names')); if(Array.isArray(v)) return v; } catch(e){}
-  return [...DEFAULT_NAMES];
+  try { const v=JSON.parse(localStorage.getItem('cobros_names')); if(Array.isArray(v)) return v.map(normName).filter(x=>x&&x.name); } catch(e){}
+  return DEFAULT_NAMES.map(n=>({name:n, updatedAt:0}));
 }
 let banks = loadBanks();
 let names = loadNames();
 function saveBanks(){ localStorage.setItem('cobros_banks',JSON.stringify(banks)); }
 function saveNames(){ localStorage.setItem('cobros_names',JSON.stringify(names)); }
+function liveNames(){ return names.filter(n=>!n.deleted); }
+function liveBanks(){ return banks.filter(b=>!b.deleted); }
 
 function buildACC() {
   const acc = {};
-  for(const b of banks) for(const s of b.shortcuts) acc[s]=b.name;
+  for(const b of banks){ if(b.deleted) continue; for(const s of b.shortcuts) acc[s]=b.name; }
   return acc;
 }
 let ACC = buildACC();
@@ -812,6 +815,7 @@ function getDateIndex() {
   if (_dateIndex && _dateIndexVer === _recordsVer) return _dateIndex;
   _dateIndex = {};
   for (const r of records) {
+    if (r.deleted) continue;
     const d = r.date || '?';
     if (!_dateIndex[d]) _dateIndex[d] = [];
     _dateIndex[d].push(r);
@@ -850,7 +854,7 @@ function getBankRanks() {
   if (_rankCache && _rankVer === _recordsVer) return _rankCache;
   const byBank = {};
   for (const r of records) {
-    if (!r.account) continue;
+    if (r.deleted || !r.account) continue;
     if (!byBank[r.account]) byBank[r.account] = [];
     byBank[r.account].push(r);
   }
@@ -959,7 +963,8 @@ document.addEventListener('touchend', () => {
       swipeEntry.style.opacity = '0';
       swipeEntry.style.maxHeight = '0';
       setTimeout(() => {
-        records = records.filter(r=>r.id!==id);
+        const r=records.find(r=>r.id===id);
+        if (r) { r.deleted=true; r.updatedAt=Date.now(); }
         invalidateIndex();
         save(); render();
       }, 200);
@@ -974,7 +979,7 @@ document.addEventListener('touchend', () => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 function buildNameGridHTML() {
-  return names.map(n=>`<button class="name-chip" data-name="${n}">${cap(n)}</button>`).join('') +
+  return liveNames().map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
 }
@@ -982,7 +987,7 @@ function buildNameGridHTML() {
 function tapConfirm(id) {
   const r = records.find(r=>r.id===id);
   if (!r) return;
-  if (r.confirmed) { r.confirmed=false; invalidateIndex(); save(); render(); return; }
+  if (r.confirmed) { r.confirmed=false; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
   pendingId = id;
   DOM['name-desc'].textContent =
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
@@ -1002,7 +1007,7 @@ DOM['name-grid'].addEventListener('click', e => {
 
 function pickName(name) {
   const r = records.find(r=>r.id===pendingId);
-  if (r) { r.name=name; r.confirmed=true; invalidateIndex(); save(); render(); }
+  if (r) { r.name=name; r.confirmed=true; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); }
   closeSheet('name'); pendingId=null;
 }
 function showCustomName() {
@@ -1015,7 +1020,9 @@ function confirmCustomName() {
 }
 function delRec(id) {
   if (!confirm('¿Eliminar?')) return;
-  records=records.filter(r=>r.id!==id); invalidateIndex(); save(); render();
+  const r=records.find(r=>r.id===id);
+  if (r) { r.deleted=true; r.updatedAt=Date.now(); }
+  invalidateIndex(); save(); render();
 }
 let editingId = null;
 function editEntry(id) {
@@ -1032,6 +1039,7 @@ function saveEdit() {
     const amt = parseFloat(DOM['edit-amount'].value);
     if (!isNaN(amt) && amt > 0) r.amount = amt;
     r.name = DOM['edit-name'].value.trim();
+    r.updatedAt = Date.now();
     invalidateIndex(); save(); render();
   }
   closeSheet('edit'); editingId = null;
@@ -1090,8 +1098,9 @@ function finishAdd() {
   if (!addData.tipo || addData.amount <= 0) return;
   haptic(15);
   const com = addData.tipo === 'D' && !addData.sc;
+  const now=Date.now();
   records.unshift({id:uid(), tipo:addData.tipo, amount:addData.amount, account:addData.account,
-    name:'', com, date:viewDate, confirmed:false, createdAt:Date.now()});
+    name:'', com, date:viewDate, confirmed:false, createdAt:now, updatedAt:now});
   invalidateIndex(); save(); render();
   closeSheet('add');
 }
@@ -1178,7 +1187,7 @@ function renderCal() {
     y > now.getFullYear() || (y === now.getFullYear() && m >= now.getMonth());
 
   const today = todayISO();
-  const hasDates = new Set(records.map(r=>r.date));
+  const hasDates = new Set(records.filter(r=>!r.deleted).map(r=>r.date));
   const firstDay = (new Date(y,m,1).getDay()+6)%7;
   const total = new Date(y,m+1,0).getDate();
 
@@ -1246,117 +1255,143 @@ function applyTheme(t){
 $('btn-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
 $('row-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'dark'));
 
-// ── GitHub Gist Sync ──────────────────────────────────────────────────────────
+// ── Sincronización (GitHub Gist · fusión sin pérdida + sondeo) ────────────────
+// Modelo: cada dispositivo FUSIONA (nunca reemplaza). Registros/bancos/nombres
+// se unen por clave; gana la versión con updatedAt más reciente. Los borrados
+// son "tombstones" (deleted:true) para que se propaguen sin resucitar datos.
 const GFILE='cobros-data.json';
+const GDESC='cobros-app-data';
+const POLL_MS=5000;
 function setSyncDot(s){DOM['sync-dot'].className=s;}
+function ghTs(o){ return (o&&(o.updatedAt||o.createdAt))||0; }
+function mergeByKey(local, remote, key){
+  const map=new Map();
+  for(const x of local) if(x&&x[key]!=null) map.set(x[key],x);
+  for(const x of remote){
+    if(!x||x[key]==null) continue;
+    const ex=map.get(x[key]);
+    if(!ex || ghTs(x)>=ghTs(ex)) map.set(x[key],x);
+  }
+  return [...map.values()];
+}
+// ¿tenemos algo local más nuevo/exclusivo que el remoto no tiene?
+function hasLocalNewer(local, remote, key){
+  const rmap=new Map(remote.map(x=>[x[key],x]));
+  for(const x of local){
+    const r=rmap.get(x[key]);
+    if(!r || ghTs(x)>ghTs(r)) return true;
+  }
+  return false;
+}
+function buildSyncDoc(){ return JSON.stringify({v:3, records, banks, names}); }
+function parseSyncDoc(content){
+  let data; try{ data=JSON.parse(content); }catch(e){ return null; }
+  if(Array.isArray(data)) return {records:data, banks:null, names:null}; // formato antiguo
+  if(data&&typeof data==='object') return {
+    records:Array.isArray(data.records)?data.records:[],
+    banks:Array.isArray(data.banks)?data.banks:null,
+    names:Array.isArray(data.names)?data.names.map(normName):null,
+  };
+  return null;
+}
+function persistAll(){
+  localStorage.setItem('cobros_v2',JSON.stringify(records));
+  saveBanks(); saveNames();
+}
+function rebuildBankDerived(){ ACC=buildACC(); ACC_KEYS=Object.keys(ACC).sort((a,b)=>b.length-a.length); }
+function renderAll(){ renderPills(); renderLegend(); invalidateIndex(); render(); }
 
-async function doSync(){
-  const token=localStorage.getItem('gh_tok'); if(!token) return;
-  setSyncDot('syncing');
-  try {
-    let gid=localStorage.getItem('gh_gid');
-    const h={'Authorization':`token ${token}`,'Content-Type':'application/json'};
-    const body=JSON.stringify(records);
-    if (!gid){
-      const list=await(await fetch('https://api.github.com/gists',{headers:h})).json();
-      const found=Array.isArray(list)?list.find(g=>g.description==='cobros-app-data'):null;
-      if (found){ gid=found.id; }
-      else {
-        const r=await(await fetch('https://api.github.com/gists',{method:'POST',headers:h,
-          body:JSON.stringify({description:'cobros-app-data',public:false,files:{[GFILE]:{content:body}}})})).json();
-        gid=r.id;
-      }
-      localStorage.setItem('gh_gid',gid);
-      DOM['gh-gid'].value=gid;
-    } else {
-      await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',headers:h,
-        body:JSON.stringify({files:{[GFILE]:{content:body}}})});
+async function ensureGid(tok){
+  let gid=localStorage.getItem('gh_gid');
+  if(gid) return gid;
+  const h={'Authorization':`token ${tok}`};
+  const list=await(await fetch('https://api.github.com/gists',{headers:h})).json();
+  const found=Array.isArray(list)?list.find(g=>g.description===GDESC):null;
+  if(found){ gid=found.id; }
+  else{
+    const r=await(await fetch('https://api.github.com/gists',{method:'POST',
+      headers:{...h,'Content-Type':'application/json'},
+      body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content:buildSyncDoc()}}})})).json();
+    gid=r.id;
+  }
+  if(gid){ localStorage.setItem('gh_gid',gid); if(DOM['gh-gid']) DOM['gh-gid'].value=gid; }
+  return gid;
+}
+
+let _syncing=false, _syncAgain=false;
+async function syncNow(){
+  const tok=localStorage.getItem('gh_tok');
+  if(!tok) return;
+  if(_syncing){ _syncAgain=true; return; }
+  _syncing=true; setSyncDot('syncing');
+  try{
+    const gid=await ensureGid(tok);
+    if(!gid){ setSyncDot('error'); return; }
+    const h={'Authorization':`token ${tok}`};
+    const j=await(await fetch(`https://api.github.com/gists/${gid}`,{headers:h,cache:'no-store'})).json();
+    const content=j&&j.files&&j.files[GFILE]?j.files[GFILE].content:null;
+    const remote=content?parseSyncDoc(content):{records:[],banks:null,names:null};
+    if(!remote){ setSyncDot('error'); return; }
+    const rRecs=remote.records||[], rBanks=remote.banks||[], rNames=remote.names||[];
+    // ¿debemos subir? (tenemos datos que el remoto aún no refleja)
+    const needPush =
+      hasLocalNewer(records,rRecs,'id') ||
+      (remote.banks!=null ? hasLocalNewer(banks,rBanks,'name') : banks.length>0) ||
+      (remote.names!=null ? hasLocalNewer(names,rNames,'name') : names.length>0);
+    // fusionar remoto -> local (nunca perdemos lo nuestro)
+    const before=JSON.stringify([records,banks,names]);
+    records=mergeByKey(records,rRecs,'id');
+    if(remote.banks!=null) banks=mergeByKey(banks,rBanks,'name');
+    if(remote.names!=null) names=mergeByKey(names,rNames,'name');
+    const changedLocal=JSON.stringify([records,banks,names])!==before;
+    if(changedLocal){ persistAll(); rebuildBankDerived(); renderAll(); }
+    if(needPush){
+      await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',
+        headers:{...h,'Content-Type':'application/json'},
+        body:JSON.stringify({files:{[GFILE]:{content:buildSyncDoc()}}})});
     }
     setSyncDot('synced');
-  } catch(e){ setSyncDot('error'); }
-}
-
-async function pullSync(){
-  const tok=(DOM['gh-tok'].value.trim()||localStorage.getItem('gh_tok'));
-  const gid=(DOM['gh-gid'].value.trim()||localStorage.getItem('gh_gid'));
-  if (!tok){alert('Ingresa tu GitHub Token.');return;}
-  if (tok) localStorage.setItem('gh_tok',tok);
-  if (gid) localStorage.setItem('gh_gid',gid);
-  setSyncDot('syncing');
-  try {
-    let finalGid=gid;
-    const h={'Authorization':`token ${tok}`};
-    if (!finalGid){
-      const list=await(await fetch('https://api.github.com/gists',{headers:h})).json();
-      const found=Array.isArray(list)?list.find(g=>g.description==='cobros-app-data'):null;
-      if (!found){alert('No se encontró un Gist con datos.');setSyncDot('error');return;}
-      finalGid=found.id; localStorage.setItem('gh_gid',finalGid);
-    }
-    const j=await(await fetch(`https://api.github.com/gists/${finalGid}`,{headers:h})).json();
-    const content=j.files?.[GFILE]?.content;
-    if (!content) throw new Error('sin datos');
-    records=JSON.parse(content);
-    invalidateIndex();
-    localStorage.setItem('cobros_v2',JSON.stringify(records));
-    setSyncDot('synced'); render(); closeSheet('cfg');
-  } catch(e){ setSyncDot('error'); alert('Error: '+e.message); }
-}
-
-function pushSync(){
-  const tok=DOM['gh-tok'].value.trim();
-  const gid=DOM['gh-gid'].value.trim();
-  if (tok) localStorage.setItem('gh_tok',tok);
-  if (gid) localStorage.setItem('gh_gid',gid);
-  doSync();
+  }catch(e){ setSyncDot('error'); }
+  finally{ _syncing=false; if(_syncAgain){ _syncAgain=false; syncNow(); } }
 }
 
 function scheduleSync(){
   clearTimeout(syncTimer);
-  if (!localStorage.getItem('gh_tok')) return;
-  syncTimer=setTimeout(doSync,3000);
+  if(!localStorage.getItem('gh_tok')) return;
+  syncTimer=setTimeout(syncNow,1500);
 }
 
-$('btn-push').addEventListener('click',pushSync);
-$('btn-pull').addEventListener('click',pullSync);
+let _pollTimer=null;
+function startSync(){
+  if(!localStorage.getItem('gh_tok')) return;
+  syncNow();
+  if(_pollTimer) clearInterval(_pollTimer);
+  _pollTimer=setInterval(()=>{ if(!document.hidden) syncNow(); }, POLL_MS);
+}
+
+function saveCreds(){
+  const tok=DOM['gh-tok'].value.trim(); const gid=DOM['gh-gid'].value.trim();
+  if(tok) localStorage.setItem('gh_tok',tok);
+  if(gid) localStorage.setItem('gh_gid',gid);
+}
+// Ambos botones ahora hacen una sincronización segura por fusión (sin borrar nada)
+$('btn-push').addEventListener('click',()=>{ haptic(); saveCreds(); startSync(); showToast('Sincronizando…'); });
+$('btn-pull').addEventListener('click',()=>{ haptic(); saveCreds(); startSync(); showToast('Sincronizando…'); });
+// "Borrar" solo limpia la copia LOCAL (no toca la nube; se vuelve a bajar al sincronizar)
 $('btn-clear').addEventListener('click',()=>{
-  if(confirm('¿Borrar TODOS los datos? No se puede deshacer.')){
+  if(confirm('¿Borrar los datos de ESTE dispositivo? (No borra la nube; se vuelven a descargar al sincronizar)')){
     records=[]; invalidateIndex(); localStorage.removeItem('cobros_v2'); render(); closeSheet('cfg');
   }
 });
-
-// ── Auto-sync on open ─────────────────────────────────────────────────────────
-async function autoSync() {
-  const tok = localStorage.getItem('gh_tok');
-  if (!tok) return;
-  setSyncDot('syncing');
-  try {
-    let gid = localStorage.getItem('gh_gid');
-    const h = {'Authorization':`token ${tok}`};
-    if (!gid) {
-      const list = await(await fetch('https://api.github.com/gists',{headers:h})).json();
-      const found = Array.isArray(list)?list.find(g=>g.description==='cobros-app-data'):null;
-      if (!found){setSyncDot('error');return;}
-      gid = found.id; localStorage.setItem('gh_gid',gid);
-    }
-    const j = await(await fetch(`https://api.github.com/gists/${gid}`,{headers:h})).json();
-    const content = j.files?.[GFILE]?.content;
-    if (!content){setSyncDot('error');return;}
-    const remote = JSON.parse(content);
-    const map = new Map(records.map(r=>[r.id,r]));
-    for (const r of remote) map.set(r.id,r);
-    records = [...map.values()].sort((a,b)=>b.createdAt-a.createdAt);
-    invalidateIndex();
-    localStorage.setItem('cobros_v2',JSON.stringify(records));
-    setSyncDot('synced');
-    render();
-  } catch(e){ setSyncDot('error'); }
-}
+// Sincroniza al volver a la pestaña / recuperar el foco
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNow(); });
+window.addEventListener('focus',()=>syncNow());
 
 // ── Dynamic pills & legend ──────────────────────────────────────────────────
 function renderPills() {
   const row = document.querySelector('.filter-row');
   const parts = [`<button class="pill${activeFilter==='all'?' active':''}" data-f="all">Todos</button>`];
-  for (const b of banks) {
+  for (const b of liveBanks()) {
     parts.push(`<button class="pill${activeFilter===b.name?' active':''}" data-f="${b.name}">${b.label}</button>`);
   }
   row.innerHTML = parts.join('');
@@ -1368,7 +1403,7 @@ function renderLegend() {
     `<div class="lg"><b>T</b> Transf.</div>`,
     `<div class="lg"><b>sc</b> sin comisión</div>`,
   ];
-  for (const b of banks) {
+  for (const b of liveBanks()) {
     parts.push(`<div class="lg"><b>${b.shortcuts[0]}</b> ${b.label}</div>`);
   }
   el.innerHTML = parts.join('');
@@ -1377,32 +1412,35 @@ function renderLegend() {
 // ── Bank & name management (settings) ──────────────────────────────────────
 function renderMgrBanks() {
   const el = $('mgr-banks');
-  el.innerHTML = banks.map((b,i)=>
-    `<span class="mgr-chip">${b.label} <small style="color:var(--muted);margin-left:2px">(${b.shortcuts[0]})</small><button class="mgr-x" data-bi="${i}">✕</button></span>`
+  el.innerHTML = liveBanks().map(b=>
+    `<span class="mgr-chip">${b.label} <small style="color:var(--muted);margin-left:2px">(${b.shortcuts[0]})</small><button class="mgr-x" data-bkey="${encodeURIComponent(b.name)}">✕</button></span>`
   ).join('');
 }
 function renderMgrNames() {
   const el = $('mgr-names');
-  el.innerHTML = names.map((n,i)=>
-    `<span class="mgr-chip">${cap(n)}<button class="mgr-x" data-ni="${i}">✕</button></span>`
+  el.innerHTML = liveNames().map(n=>
+    `<span class="mgr-chip">${cap(n.name)}<button class="mgr-x" data-nkey="${encodeURIComponent(n.name)}">✕</button></span>`
   ).join('');
 }
 $('mgr-banks').addEventListener('click', e => {
-  const btn = e.target.closest('.mgr-x[data-bi]');
+  const btn = e.target.closest('.mgr-x[data-bkey]');
   if (!btn) return;
   haptic();
-  const idx = parseInt(btn.dataset.bi);
-  if (banks.length <= 1) return;
-  banks.splice(idx, 1);
-  saveBanks(); ACC = buildACC(); ACC_KEYS = Object.keys(ACC).sort((a,b)=>b.length-a.length);
+  if (liveBanks().length <= 1) return;
+  const key = decodeURIComponent(btn.dataset.bkey);
+  const b = banks.find(x=>x.name===key);
+  if (b) { b.deleted=true; b.updatedAt=Date.now(); }
+  saveBanks(); scheduleSync(); ACC = buildACC(); ACC_KEYS = Object.keys(ACC).sort((a,b)=>b.length-a.length);
   renderMgrBanks(); renderPills(); renderLegend();
 });
 $('mgr-names').addEventListener('click', e => {
-  const btn = e.target.closest('.mgr-x[data-ni]');
+  const btn = e.target.closest('.mgr-x[data-nkey]');
   if (!btn) return;
   haptic();
-  names.splice(parseInt(btn.dataset.ni), 1);
-  saveNames(); renderMgrNames();
+  const key = decodeURIComponent(btn.dataset.nkey);
+  const n = names.find(x=>x.name===key);
+  if (n) { n.deleted=true; n.updatedAt=Date.now(); }
+  saveNames(); scheduleSync(); renderMgrNames();
 });
 function addBank() {
   const nameInp = $('add-bank-name');
@@ -1411,18 +1449,21 @@ function addBank() {
   const bShort = shortInp.value.trim().toLowerCase();
   if (!bName) return;
   const short = bShort || bName.toLowerCase().slice(0,3);
-  if (banks.some(b=>b.name===bName)) return;
-  banks.push({name:bName, label:bName, shortcuts:[short]});
-  saveBanks(); ACC = buildACC(); ACC_KEYS = Object.keys(ACC).sort((a,b)=>b.length-a.length);
+  const ex = banks.find(b=>b.name===bName);
+  if (ex) { ex.deleted=false; ex.label=bName; if(!ex.shortcuts.includes(short)) ex.shortcuts=[short]; ex.updatedAt=Date.now(); }
+  else banks.push({name:bName, label:bName, shortcuts:[short], updatedAt:Date.now()});
+  saveBanks(); scheduleSync(); ACC = buildACC(); ACC_KEYS = Object.keys(ACC).sort((a,b)=>b.length-a.length);
   nameInp.value=''; shortInp.value='';
   renderMgrBanks(); renderPills(); renderLegend();
 }
 function addName() {
   const inp = $('add-name-inp');
   const n = inp.value.trim().toLowerCase();
-  if (!n || names.includes(n)) return;
-  names.push(n);
-  saveNames(); renderMgrNames();
+  if (!n) return;
+  const ex = names.find(x=>x.name===n);
+  if (ex) { ex.deleted=false; ex.updatedAt=Date.now(); }
+  else names.push({name:n, updatedAt:Date.now()});
+  saveNames(); scheduleSync(); renderMgrNames();
   inp.value='';
 }
 $('btn-add-bank').addEventListener('click', addBank);
@@ -1437,7 +1478,7 @@ applyTheme(theme);
 renderPills();
 renderLegend();
 renderNow(); // Synchronous first paint
-autoSync();
+startSync();
 
 // ── Keyboard fix (iOS Safari + Chrome/Brave) ───────────────────────────────────
 if (window.visualViewport) {
