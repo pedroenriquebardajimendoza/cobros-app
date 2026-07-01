@@ -721,6 +721,24 @@ function saveNames(){ localStorage.setItem('cobros_names',JSON.stringify(names))
 function liveNames(){ return names.filter(n=>!n.deleted); }
 function liveBanks(){ return banks.filter(b=>!b.deleted); }
 
+// Reconstruye bancos faltantes a partir de los cobros reales (campo account).
+// Garantiza que ningún banco usado se pierda, aunque su definición nunca se
+// haya sincronizado a este dispositivo. No resucita bancos borrados a propósito
+// (se saltan los que ya existen como tombstone).
+function reconcileBanksFromRecords(){
+  const known = new Set(banks.map(b=>b.name)); // incluye borrados: no resucitar
+  let added = false;
+  for (const r of records){
+    if (!r || r.deleted || !r.account || known.has(r.account)) continue;
+    known.add(r.account);
+    const short = (r.account.toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,3)) || r.account.toLowerCase().slice(0,3) || 'bco';
+    banks.push({name:r.account, label:r.account, shortcuts:[short], updatedAt:0, derived:true});
+    added = true;
+  }
+  if (added){ saveBanks(); }
+  return added;
+}
+
 function buildACC() {
   const acc = {};
   for(const b of banks){ if(b.deleted) continue; for(const s of b.shortcuts) acc[s]=b.name; }
@@ -1343,9 +1361,10 @@ async function syncNow(){
     records=mergeByKey(records,rRecs,'id');
     if(remote.banks!=null) banks=mergeByKey(banks,rBanks,'name');
     if(remote.names!=null) names=mergeByKey(names,rNames,'name');
+    const recon=reconcileBanksFromRecords(); // recupera bancos desde los cobros
     const changedLocal=JSON.stringify([records,banks,names])!==before;
     if(changedLocal){ persistAll(); rebuildBankDerived(); renderAll(); }
-    if(needPush){
+    if(needPush||recon){
       await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',
         headers:{...h,'Content-Type':'application/json'},
         body:JSON.stringify({files:{[GFILE]:{content:buildSyncDoc()}}})});
@@ -1474,6 +1493,8 @@ $('add-name-inp').addEventListener('keydown', e => { if(e.key==='Enter'){e.preve
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 load();
+reconcileBanksFromRecords();
+rebuildBankDerived();
 applyTheme(theme);
 renderPills();
 renderLegend();
