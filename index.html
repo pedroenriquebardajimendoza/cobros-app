@@ -350,6 +350,10 @@
     #sync-dot.synced{background:var(--green)}
     #sync-dot.error{background:var(--red)}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+    #btn-sync.sync-syncing{color:var(--yellow);animation:spin 1s linear infinite}
+    #btn-sync.sync-synced{color:var(--green)}
+    #btn-sync.sync-error{color:var(--red)}
+    @keyframes spin{to{transform:rotate(360deg)}}
 
     #date-picker{position:fixed;opacity:0;pointer-events:none;width:0;height:0}
 
@@ -540,6 +544,7 @@
     </div>
     <button class="nav-btn" id="btn-next">›</button>
     <div class="hdr-btns">
+      <button class="icon-btn" id="btn-sync" title="Sincronizar">🔄</button>
       <button class="icon-btn" id="btn-theme">☀️</button>
       <button class="icon-btn" id="btn-hist">📋</button>
       <button class="icon-btn" id="btn-cfg">⚙️</button>
@@ -1280,7 +1285,11 @@ $('row-theme').addEventListener('click',()=>applyTheme(theme==='dark'?'light':'d
 const GFILE='cobros-data.json';
 const GDESC='cobros-app-data';
 const POLL_MS=5000;
-function setSyncDot(s){DOM['sync-dot'].className=s;}
+function setSyncDot(s){
+  DOM['sync-dot'].className=s;
+  const b=$('btn-sync');
+  if(b) b.className='icon-btn'+(s?(' sync-'+s):'');
+}
 function ghTs(o){ return (o&&(o.updatedAt||o.createdAt))||0; }
 function mergeByKey(local, remote, key){
   const map=new Map();
@@ -1402,6 +1411,16 @@ $('btn-clear').addEventListener('click',()=>{
     records=[]; invalidateIndex(); localStorage.removeItem('cobros_v2'); render(); closeSheet('cfg');
   }
 });
+// Botón de sincronizar en la cabecera (visible desde la pantalla principal)
+$('btn-sync').addEventListener('click',()=>{
+  haptic();
+  if(!localStorage.getItem('gh_tok')){ showToast('Configura tu token en ⚙️'); openSheet('cfg'); return; }
+  showToast('Sincronizando…');
+  startSync();
+});
+// Guardar credenciales automáticamente al escribirlas (sin tener que pulsar otro botón)
+DOM['gh-tok'].addEventListener('change',()=>{ saveCreds(); if(localStorage.getItem('gh_tok')){ showToast('Sincronizando…'); startSync(); } });
+DOM['gh-gid'].addEventListener('change',()=>{ saveCreds(); });
 // Sincroniza al volver a la pestaña / recuperar el foco
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNow(); });
 window.addEventListener('focus',()=>syncNow());
