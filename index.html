@@ -1538,7 +1538,17 @@ if (window.visualViewport) {
 
 // ── Service Worker registration (offline support) ────────────────────────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(()=>{});
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.update();                                   // busca versión nueva al abrir
+    // Si entra un service worker nuevo, recarga para aplicarlo sin quedarse pegado
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener('statechange', () => {
+        if (nw.state === 'activated' && navigator.serviceWorker.controller) location.reload();
+      });
+    });
+  }).catch(()=>{});
 }
 </script>
 </body>
