@@ -1,0 +1,9 @@
+node_modules/
+www/
+.DS_Store
+
+# iOS build artifacts / generated copies
+ios/App/App/public/
+ios/App/build/
+ios/DerivedData/
+ios/**/xcuserdata/
