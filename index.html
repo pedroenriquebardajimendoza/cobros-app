@@ -234,12 +234,12 @@
     }
 
     /* ── NAME PICKER ── */
-    .name-grid{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 16px}
+    .name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 20px 16px;max-height:58vh;overflow-y:auto}
     .name-chip{
-      padding:10px 18px;border-radius:12px;
+      padding:12px 12px;border-radius:12px;width:100%;text-align:center;
       border:1.5px solid var(--border-strong);background:var(--surface2);
       color:var(--text);font-size:0.8rem;font-weight:500;
-      cursor:pointer;white-space:nowrap;
+      cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
       transition:all .2s cubic-bezier(.34,1.56,.64,1);
     }
     .name-chip:active{
@@ -953,7 +953,7 @@ DOM['list'].addEventListener('click', e => {
   else if (act === 'del') delRec(id);
 });
 
-// ── Swipe-to-delete (touch) ──────────────────────────────────────────────────
+// ── Swipe derecha→izquierda para confirmar (abre panel de nombres) ───────────
 let swipeEntry=null, swipeStartX=0, swipeStartY=0, swiping=false, swipeDx=0;
 document.getElementById('list').addEventListener('touchstart', e => {
   const entry = e.target.closest('.entry');
@@ -979,19 +979,10 @@ document.addEventListener('touchend', () => {
   if (!swipeEntry) return;
   if (swiping && swipeDx < -80) {
     const id = swipeEntry.dataset.id;
-    if (id) {
-      haptic(20);
-      swipeEntry.style.transition = 'all .2s';
-      swipeEntry.style.transform = 'translateX(-100%)';
-      swipeEntry.style.opacity = '0';
-      swipeEntry.style.maxHeight = '0';
-      setTimeout(() => {
-        const r=records.find(r=>r.id===id);
-        if (r) { r.deleted=true; r.updatedAt=Date.now(); }
-        invalidateIndex();
-        save(); render();
-      }, 200);
-    }
+    const inner = swipeEntry.querySelector('.entry-inner') || swipeEntry;
+    inner.style.transform = '';                 // regresa el renglón a su sitio
+    swipeEntry.classList.remove('swiping');
+    if (id) { haptic(15); tapConfirm(id); }      // abre el panel de nombres para confirmar
   } else if (swiping) {
     const inner = swipeEntry.querySelector('.entry-inner') || swipeEntry;
     inner.style.transform = '';
@@ -1002,7 +993,8 @@ document.addEventListener('touchend', () => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 function buildNameGridHTML() {
-  return liveNames().map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
+  const sorted = liveNames().slice().sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  return sorted.map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
 }
@@ -1011,6 +1003,8 @@ function tapConfirm(id) {
   const r = records.find(r=>r.id===id);
   if (!r) return;
   if (r.confirmed) { r.confirmed=false; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
+  // Si ya tiene nombre (puesto al agregar), confirmar es un solo toque, sin popup
+  if (r.name) { r.confirmed=true; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
   pendingId = id;
   DOM['name-desc'].textContent =
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
@@ -1071,10 +1065,10 @@ function saveEdit() {
 let addData = {account:'', tipo:'', sc:false, amount:0};
 
 function resetAddFlow() {
-  addData = {account: activeFilter, tipo:'', sc:false, amount:0};
+  addData = {account: activeFilter, tipo:'D', sc:false, amount:0};
   $('add-title').textContent = addData.account;
   $('add-sc').classList.remove('on');
-  $('add-tipo-d').className = 'add-type-btn';
+  $('add-tipo-d').className = 'add-type-btn sel-d';
   $('add-tipo-t').className = 'add-type-btn';
   $('add-amount').value = '';
   $('add-save').disabled = true;
@@ -1136,6 +1130,7 @@ $('fab-add').addEventListener('click', () => {
   }
   resetAddFlow();
   openSheet('add');
+  setTimeout(()=>$('add-amount').focus(), 300);
 });
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
