@@ -1036,9 +1036,9 @@ $('name-letters').addEventListener('click', e => {
 function tapConfirm(id) {
   const r = records.find(r=>r.id===id);
   if (!r) return;
-  if (r.confirmed) { r.confirmed=false; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
-  // Si ya tiene nombre (puesto al agregar), confirmar es un solo toque, sin popup
-  if (r.name) { r.confirmed=true; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
+  // Desmarcar: quita la confirmación y el nombre (por si lo marcaste con el nombre equivocado)
+  if (r.confirmed) { r.confirmed=false; r.name=''; r.updatedAt=Date.now(); invalidateIndex(); save(); render(); return; }
+  // Pendiente → siempre abre el panel para elegir (o corregir) el nombre
   pendingId = id;
   DOM['name-desc'].textContent =
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
