@@ -234,7 +234,16 @@
     }
 
     /* ── NAME PICKER ── */
-    .name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 20px 16px;max-height:58vh;overflow-y:auto}
+    .name-letters{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px}
+    .name-letter{
+      min-width:36px;padding:9px 6px;border-radius:9px;
+      border:1.5px solid var(--border-strong);background:var(--surface2);
+      color:var(--text-2);font-size:0.85rem;font-weight:700;
+      cursor:pointer;text-align:center;
+      transition:all .15s;
+    }
+    .name-letter.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+    .name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 20px 16px;max-height:52vh;overflow-y:auto}
     .name-chip{
       padding:12px 12px;border-radius:12px;width:100%;text-align:center;
       border:1.5px solid var(--border-strong);background:var(--surface2);
@@ -609,6 +618,7 @@
     <div class="s-handle"></div>
     <div class="s-title">¿Quién envió?</div>
     <div class="s-desc" id="name-desc"></div>
+    <div class="name-letters" id="name-letters"></div>
     <div class="name-grid" id="name-grid"></div>
     <div id="name-custom" style="display:none;padding:0 18px 10px">
       <input class="s-input" id="name-inp" type="text" placeholder="Nombre nuevo"
@@ -992,12 +1002,36 @@ document.addEventListener('touchend', () => {
 }, {passive:true});
 
 // ── Actions ──────────────────────────────────────────────────────────────────
+let nameFilter = null;  // inicial activa para filtrar (o null = todos)
+
+function nameInitials() {
+  const set = new Set();
+  for (const n of liveNames()) { const c=(n.name[0]||'').toUpperCase(); if(c) set.add(c); }
+  return [...set].sort((a,b)=>a.localeCompare(b,'es'));
+}
+function buildLettersHTML() {
+  const all = `<button class="name-letter${nameFilter===null?' sel':''}" data-letter="__all">Todos</button>`;
+  return all + nameInitials().map(l=>
+    `<button class="name-letter${nameFilter===l?' sel':''}" data-letter="${l}">${l}</button>`).join('');
+}
 function buildNameGridHTML() {
-  const sorted = liveNames().slice().sort((a,b)=>a.name.localeCompare(b.name,'es'));
-  return sorted.map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
+  let list = liveNames().slice().sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  if (nameFilter) list = list.filter(n=>(n.name[0]||'').toUpperCase()===nameFilter);
+  return list.map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
 }
+function renderNamePicker() {
+  $('name-letters').innerHTML = buildLettersHTML();
+  DOM['name-grid'].innerHTML = buildNameGridHTML();
+}
+$('name-letters').addEventListener('click', e => {
+  const b = e.target.closest('.name-letter');
+  if (!b) return;
+  haptic();
+  nameFilter = b.dataset.letter==='__all' ? null : b.dataset.letter;
+  renderNamePicker();
+});
 
 function tapConfirm(id) {
   const r = records.find(r=>r.id===id);
@@ -1009,7 +1043,8 @@ function tapConfirm(id) {
   DOM['name-desc'].textContent =
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
   DOM['name-custom'].style.display = 'none';
-  DOM['name-grid'].innerHTML = buildNameGridHTML();
+  nameFilter = null;
+  renderNamePicker();
   openSheet('name');
 }
 // Name grid uses event delegation
