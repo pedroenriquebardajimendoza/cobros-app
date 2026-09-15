@@ -234,6 +234,9 @@
     }
 
     /* ── NAME PICKER ── */
+    .name-freq-label{padding:0 20px 6px;font-size:0.72rem;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
+    .name-freq{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px}
+    .name-freq .name-chip{width:auto;border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
     .name-letters{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px}
     .name-letter{
       min-width:36px;padding:9px 6px;border-radius:9px;
@@ -462,16 +465,19 @@
     .mgr-add-btn:active{transform:scale(.85)}
 
     /* ── ADD FLOW (guided wizard) ── */
-    .fab{
+    .fab-group{
       position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));
+      display:flex;gap:12px;z-index:20;
+    }
+    .fab{
       width:56px;height:56px;border-radius:16px;
-      background:var(--accent);color:#fff;border:none;
-      font-size:1.6rem;line-height:1;cursor:pointer;
+      color:#fff;border:none;
+      font-size:1.5rem;font-weight:800;line-height:1;cursor:pointer;
       display:flex;align-items:center;justify-content:center;
-      box-shadow:0 4px 20px rgba(10,132,255,.4);
-      z-index:20;
       transition:all .2s cubic-bezier(.34,1.56,.64,1);
     }
+    .fab-d{background:var(--green);box-shadow:0 4px 20px rgba(48,209,88,.4)}
+    .fab-t{background:var(--accent);box-shadow:0 4px 20px rgba(10,132,255,.4)}
     .fab:active{transform:scale(.88)}
     .toast{
       position:fixed;bottom:90px;left:50%;transform:translateX(-50%) translateY(20px);
@@ -580,7 +586,10 @@
   <div id="list"></div>
 </main>
 
-<button class="fab" id="fab-add">+</button>
+<div class="fab-group">
+  <button class="fab fab-t" id="fab-t">T</button>
+  <button class="fab fab-d" id="fab-d">D</button>
+</div>
 <div class="toast" id="toast"></div>
 
 <!-- ADD FLOW SHEET -->
@@ -590,7 +599,7 @@
     <div class="s-title" id="add-title">Nuevo cobro</div>
 
     <div style="padding:0 20px 8px">
-      <div class="add-type-row">
+      <div class="add-type-row" id="add-type-row">
         <button class="add-type-btn" data-tipo="D" id="add-tipo-d">
           <span class="add-type-letter">D</span>
           <span class="add-type-label">Depósito</span>
@@ -600,7 +609,7 @@
           <span class="add-type-label">Transferencia</span>
         </button>
       </div>
-      <div class="add-sc-row">
+      <div class="add-sc-row" id="add-sc-row">
         <button class="add-sc-toggle" id="add-sc">SC — Sin comisión</button>
       </div>
       <div class="add-amount-wrap">
@@ -618,6 +627,7 @@
     <div class="s-handle"></div>
     <div class="s-title">¿Quién envió?</div>
     <div class="s-desc" id="name-desc"></div>
+    <div id="name-frequent"></div>
     <div class="name-letters" id="name-letters"></div>
     <div class="name-grid" id="name-grid"></div>
     <div id="name-custom" style="display:none;padding:0 18px 10px">
@@ -1021,10 +1031,29 @@ function buildNameGridHTML() {
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
 }
+function topNames(n=6) {
+  const live = new Set(liveNames().map(x=>x.name));
+  const freq = {};
+  for (const r of records) { if (r.deleted||!r.name||!live.has(r.name)) continue; freq[r.name]=(freq[r.name]||0)+1; }
+  return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,n);
+}
+function buildFrequentHTML() {
+  const top = topNames(6);
+  if (!top.length) return '';
+  return `<div class="name-freq-label">Frecuentes</div>` +
+    `<div class="name-freq">${top.map(nm=>`<button class="name-chip" data-name="${nm}">${cap(nm)}</button>`).join('')}</div>`;
+}
 function renderNamePicker() {
+  $('name-frequent').innerHTML = nameFilter===null ? buildFrequentHTML() : '';
   $('name-letters').innerHTML = buildLettersHTML();
   DOM['name-grid'].innerHTML = buildNameGridHTML();
 }
+$('name-frequent').addEventListener('click', e => {
+  const chip = e.target.closest('.name-chip');
+  if (!chip) return;
+  haptic();
+  pickName(chip.dataset.name);
+});
 $('name-letters').addEventListener('click', e => {
   const b = e.target.closest('.name-letter');
   if (!b) return;
@@ -1099,14 +1128,18 @@ function saveEdit() {
 // ── Add Flow ────────────────────────────────────────────────────────────────
 let addData = {account:'', tipo:'', sc:false, amount:0};
 
-function resetAddFlow() {
-  addData = {account: activeFilter, tipo:'D', sc:false, amount:0};
-  $('add-title').textContent = addData.account;
+function openAdd(tipo) {
+  haptic();
+  if (activeFilter === 'all') { showToast('Selecciona un banco arriba primero'); return; }
+  addData = {account: activeFilter, tipo, sc:false, amount:0};
+  $('add-title').textContent = addData.account + (tipo==='D' ? ' · Depósito' : ' · Transferencia');
+  $('add-type-row').style.display = 'none';                 // el tipo ya se eligió con el botón
+  $('add-sc-row').style.display = tipo==='D' ? '' : 'none'; // SC solo aplica a depósito
   $('add-sc').classList.remove('on');
-  $('add-tipo-d').className = 'add-type-btn sel-d';
-  $('add-tipo-t').className = 'add-type-btn';
   $('add-amount').value = '';
   $('add-save').disabled = true;
+  openSheet('add');
+  setTimeout(()=>$('add-amount').focus(), 300);
 }
 
 function checkAddReady() {
@@ -1157,16 +1190,8 @@ function finishAdd() {
   closeSheet('add');
 }
 
-$('fab-add').addEventListener('click', () => {
-  haptic();
-  if (activeFilter === 'all') {
-    showToast('Selecciona un banco arriba primero');
-    return;
-  }
-  resetAddFlow();
-  openSheet('add');
-  setTimeout(()=>$('add-amount').focus(), 300);
-});
+$('fab-d').addEventListener('click', ()=>openAdd('D'));
+$('fab-t').addEventListener('click', ()=>openAdd('T'));
 
 // ── Sheets ───────────────────────────────────────────────────────────────────
 function openSheet(n) {
