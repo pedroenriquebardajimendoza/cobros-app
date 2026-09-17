@@ -1031,9 +1031,15 @@ function buildNameGridHTML() {
 }
 function topNames(n=6) {
   const live = new Set(liveNames().map(x=>x.name));
-  const freq = {};
-  for (const r of records) { if (r.deleted||!r.name||!live.has(r.name)) continue; freq[r.name]=(freq[r.name]||0)+1; }
-  return Object.keys(freq).sort((a,b)=>freq[b]-freq[a]).slice(0,n);
+  const now = Date.now();
+  const score = {};
+  for (const r of records) {
+    if (r.deleted||!r.name||!live.has(r.name)) continue;
+    // Aprende de lo reciente (pesa más) pero sigue sumando lo acumulado (base 0.3, decae ~30 días)
+    const ageDays = (now - (r.updatedAt||r.createdAt||now)) / 86400000;
+    score[r.name] = (score[r.name]||0) + 0.3 + Math.exp(-ageDays/30);
+  }
+  return Object.keys(score).sort((a,b)=>score[b]-score[a]).slice(0,n);
 }
 function buildFrequentHTML() {
   const top = topNames(6);
