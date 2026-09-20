@@ -1031,20 +1031,19 @@ function buildNameGridHTML() {
 }
 function topNames(n=6) {
   const live = new Set(liveNames().map(x=>x.name));
-  const now = Date.now();
-  const score = {};
+  // Últimos usados primero: por la fecha de uso más reciente de cada nombre
+  const lastUsed = {};
   for (const r of records) {
     if (r.deleted||!r.name||!live.has(r.name)) continue;
-    // Aprende de lo reciente (pesa más) pero sigue sumando lo acumulado (base 0.3, decae ~30 días)
-    const ageDays = (now - (r.updatedAt||r.createdAt||now)) / 86400000;
-    score[r.name] = (score[r.name]||0) + 0.3 + Math.exp(-ageDays/30);
+    const t = r.updatedAt||r.createdAt||0;
+    if (t > (lastUsed[r.name]||0)) lastUsed[r.name] = t;
   }
-  return Object.keys(score).sort((a,b)=>score[b]-score[a]).slice(0,n);
+  return Object.keys(lastUsed).sort((a,b)=>lastUsed[b]-lastUsed[a]).slice(0,n);
 }
 function buildFrequentHTML() {
   const top = topNames(6);
   if (!top.length) return '';
-  return `<div class="name-freq-label">Frecuentes</div>` +
+  return `<div class="name-freq-label">Recientes</div>` +
     `<div class="name-freq">${top.map(nm=>`<button class="name-chip" data-name="${nm}">${cap(nm)}</button>`).join('')}</div>`;
 }
 function renderNamePicker() {
