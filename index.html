@@ -233,7 +233,7 @@
 
     /* ── NAME PICKER ── */
     .name-freq-label{padding:0 20px 6px;font-size:0.72rem;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
-    .name-freq{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px}
+    .name-freq{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px;max-height:26vh;overflow-y:auto}
     .name-freq .name-chip{width:auto;border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
     .name-letters{display:flex;flex-wrap:wrap;gap:6px;padding:0 20px 12px}
     .name-letter{
@@ -244,7 +244,7 @@
       transition:all .15s;
     }
     .name-letter.sel{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
-    .name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 20px 16px;max-height:52vh;overflow-y:auto}
+    .name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:0 20px 16px;max-height:38vh;overflow-y:auto}
     .name-chip{
       padding:12px 12px;border-radius:12px;width:100%;text-align:center;
       border:1.5px solid var(--border-strong);background:var(--surface2);
@@ -1029,7 +1029,7 @@ function buildNameGridHTML() {
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
 }
-function topNames(n=6) {
+function topNames(n) {
   const live = new Set(liveNames().map(x=>x.name));
   // Últimos usados primero: por la fecha de uso más reciente de cada nombre
   const lastUsed = {};
@@ -1038,10 +1038,11 @@ function topNames(n=6) {
     const t = r.updatedAt||r.createdAt||0;
     if (t > (lastUsed[r.name]||0)) lastUsed[r.name] = t;
   }
-  return Object.keys(lastUsed).sort((a,b)=>lastUsed[b]-lastUsed[a]).slice(0,n);
+  const sorted = Object.keys(lastUsed).sort((a,b)=>lastUsed[b]-lastUsed[a]);
+  return n ? sorted.slice(0,n) : sorted;   // sin n = todos los usados
 }
 function buildFrequentHTML() {
-  const top = topNames(6);
+  const top = topNames();   // todos los recientes
   if (!top.length) return '';
   return `<div class="name-freq-label">Recientes</div>` +
     `<div class="name-freq">${top.map(nm=>`<button class="name-chip" data-name="${nm}">${cap(nm)}</button>`).join('')}</div>`;
