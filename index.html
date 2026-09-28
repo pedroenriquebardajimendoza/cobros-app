@@ -1226,7 +1226,9 @@ function openSheet(n) {
     DOM['gh-gid'].value = localStorage.getItem('gh_gid')||'';
     renderMgrBanks(); renderMgrNames();
   }
-  $(n+'-ov').classList.add('open');
+  const _ov=$(n+'-ov');
+  _ov.style.bottom=''; const _sh=_ov.querySelector('.sheet'); if(_sh) _sh.style.maxHeight='';  // limpia ajustes de teclado previos
+  _ov.classList.add('open');
 }
 function closeSheet(n) {
   $(n+'-ov').classList.remove('open');
@@ -1609,6 +1611,13 @@ if (window.visualViewport) {
       const vv = window.visualViewport;
       document.body.style.height = vv.height + 'px';
       document.body.style.transform = vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+      // Sube los paneles (sheets) por encima del teclado y ajusta su alto para que quepan
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.querySelectorAll('.sheet-overlay.open').forEach(ov => {
+        ov.style.bottom = kb ? kb + 'px' : '';
+        const sh = ov.querySelector('.sheet');
+        if (sh) sh.style.maxHeight = kb ? (vv.height - 6) + 'px' : '';
+      });
     });
   }
   window.visualViewport.addEventListener('resize', onViewport, {passive:true});
