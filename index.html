@@ -232,6 +232,15 @@
     }
 
     /* ── NAME PICKER ── */
+    .name-search{
+      display:block;margin:0 20px 12px;width:calc(100% - 40px);
+      padding:11px 14px;border-radius:12px;
+      border:1.5px solid var(--border-strong);background:var(--surface2);
+      color:var(--text);font-size:0.95rem;outline:none;-webkit-appearance:none;
+      transition:border-color .2s,box-shadow .2s;
+    }
+    .name-search:focus{border-color:var(--accent);box-shadow:var(--glow)}
+    .name-search::placeholder{color:var(--muted)}
     .name-freq-label{padding:0 20px 6px;font-size:0.72rem;font-weight:700;color:var(--muted);letter-spacing:.05em;text-transform:uppercase}
     .name-freq{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px;max-height:26vh;overflow-y:auto}
     .name-freq .name-chip{width:auto;border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
@@ -625,6 +634,7 @@
     <div class="s-handle"></div>
     <div class="s-title">¿Quién envió?</div>
     <div class="s-desc" id="name-desc"></div>
+    <input id="name-search" class="name-search" type="text" placeholder="🔍 Buscar nombre…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <div id="name-frequent"></div>
     <div class="name-letters" id="name-letters"></div>
     <div class="name-grid" id="name-grid"></div>
@@ -1011,6 +1021,7 @@ document.addEventListener('touchend', () => {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 let nameFilter = null;  // inicial activa para filtrar (o null = todos)
+let nameSearch = '';    // texto del buscador (teclado)
 
 function nameInitials() {
   const set = new Set();
@@ -1024,7 +1035,9 @@ function buildLettersHTML() {
 }
 function buildNameGridHTML() {
   let list = liveNames().slice().sort((a,b)=>a.name.localeCompare(b.name,'es'));
-  if (nameFilter) list = list.filter(n=>(n.name[0]||'').toUpperCase()===nameFilter);
+  const q = (nameSearch||'').trim().toLowerCase();
+  if (q) list = list.filter(n=>n.name.toLowerCase().includes(q));
+  else if (nameFilter) list = list.filter(n=>(n.name[0]||'').toUpperCase()===nameFilter);
   return list.map(n=>`<button class="name-chip" data-name="${n.name}">${cap(n.name)}</button>`).join('') +
     `<button class="name-chip add" data-name="__custom">+ Otro</button>` +
     `<button class="name-chip skip" data-name="">Sin nombre</button>`;
@@ -1048,10 +1061,16 @@ function buildFrequentHTML() {
     `<div class="name-freq">${top.map(nm=>`<button class="name-chip" data-name="${nm}">${cap(nm)}</button>`).join('')}</div>`;
 }
 function renderNamePicker() {
-  $('name-frequent').innerHTML = nameFilter===null ? buildFrequentHTML() : '';
-  $('name-letters').innerHTML = buildLettersHTML();
+  const searching = !!(nameSearch && nameSearch.trim());
+  $('name-frequent').innerHTML = (!searching && nameFilter===null) ? buildFrequentHTML() : '';
+  $('name-letters').innerHTML = searching ? '' : buildLettersHTML();
   DOM['name-grid'].innerHTML = buildNameGridHTML();
 }
+$('name-search').addEventListener('input', () => {
+  nameSearch = $('name-search').value;
+  nameFilter = null;
+  renderNamePicker();
+});
 $('name-frequent').addEventListener('click', e => {
   const chip = e.target.closest('.name-chip');
   if (!chip) return;
@@ -1077,6 +1096,7 @@ function tapConfirm(id) {
     `${r.tipo==='D'?'Depósito':'Transferencia'} ${fmt(r.amount)}${r.account?' · '+r.account:''}`;
   DOM['name-custom'].style.display = 'none';
   nameFilter = null;
+  nameSearch = ''; $('name-search').value = '';
   renderNamePicker();
   openSheet('name');
 }
