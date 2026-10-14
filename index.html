@@ -1426,10 +1426,14 @@ async function ensureGid(tok){
   let gid=localStorage.getItem('gh_gid');
   if(gid) return gid;
   const h={'Authorization':`token ${tok}`};
-  const list=await ghFetch('https://api.github.com/gists',{headers:h});
-  const found=Array.isArray(list)?list.find(g=>g.description===GDESC):null;
-  if(found){ gid=found.id; }
-  else{
+  const list=await ghFetch('https://api.github.com/gists?per_page=100',{headers:h});
+  const cands=(Array.isArray(list)?list:[]).filter(g=>g.description===GDESC);
+  if(cands.length){
+    // Si hay varios con la misma descripción (p.ej. uno vacío duplicado), usa el que tenga
+    // el archivo de datos MÁS GRANDE (= más cobros). Así nunca nos quedamos en uno vacío.
+    cands.sort((a,b)=>((b.files&&b.files[GFILE]&&b.files[GFILE].size)||0)-((a.files&&a.files[GFILE]&&a.files[GFILE].size)||0));
+    gid=cands[0].id;
+  } else {
     const r=await ghFetch('https://api.github.com/gists',{method:'POST',
       headers:{...h,'Content-Type':'application/json'},
       body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content:buildSyncDoc()}}})});
@@ -1607,6 +1611,9 @@ $('add-name-inp').addEventListener('keydown', e => { if(e.key==='Enter'){e.preve
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 load();
+// Una sola vez: olvida el Gist guardado para re-descubrir el correcto (el que tiene
+// más datos). Repara equipos que quedaron apuntando a un Gist vacío.
+try{ if(!localStorage.getItem('gid_fix_v1')){ localStorage.removeItem('gh_gid'); localStorage.setItem('gid_fix_v1','1'); } }catch(e){}
 reconcileBanksFromRecords();
 rebuildBankDerived();
 applyTheme(theme);
