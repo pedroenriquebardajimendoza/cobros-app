@@ -1409,17 +1409,30 @@ function persistAll(){
 function rebuildBankDerived(){ ACC=buildACC(); ACC_KEYS=Object.keys(ACC).sort((a,b)=>b.length-a.length); }
 function renderAll(){ renderPills(); renderLegend(); invalidateIndex(); render(); }
 
+function ghErr(status){
+  if(status===401) return 'Token inválido o caducado';
+  if(status===403) return 'El token necesita permiso "gist" (o límite de GitHub)';
+  if(status===404) return 'No encontrado en GitHub';
+  return 'Error de GitHub ('+status+')';
+}
+async function ghFetch(url,opts){
+  const res=await fetch(url,opts);
+  if(!res.ok){ const e=new Error(ghErr(res.status)); e.status=res.status; throw e; }
+  return res.json();
+}
+function syncErrMsg(e){ return (e&&e.status) ? e.message : 'Sin conexión a internet'; }
+
 async function ensureGid(tok){
   let gid=localStorage.getItem('gh_gid');
   if(gid) return gid;
   const h={'Authorization':`token ${tok}`};
-  const list=await(await fetch('https://api.github.com/gists',{headers:h})).json();
+  const list=await ghFetch('https://api.github.com/gists',{headers:h});
   const found=Array.isArray(list)?list.find(g=>g.description===GDESC):null;
   if(found){ gid=found.id; }
   else{
-    const r=await(await fetch('https://api.github.com/gists',{method:'POST',
+    const r=await ghFetch('https://api.github.com/gists',{method:'POST',
       headers:{...h,'Content-Type':'application/json'},
-      body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content:buildSyncDoc()}}})})).json();
+      body:JSON.stringify({description:GDESC,public:false,files:{[GFILE]:{content:buildSyncDoc()}}})});
     gid=r.id;
   }
   if(gid){ localStorage.setItem('gh_gid',gid); if(DOM['gh-gid']) DOM['gh-gid'].value=gid; }
@@ -1427,19 +1440,19 @@ async function ensureGid(tok){
 }
 
 let _syncing=false, _syncAgain=false;
-async function syncNow(){
+async function syncNow(manual){
   const tok=localStorage.getItem('gh_tok');
-  if(!tok) return;
+  if(!tok){ if(manual) showToast('Falta el token (⚙️)'); return; }
   if(_syncing){ _syncAgain=true; return; }
   _syncing=true; setSyncDot('syncing');
   try{
     const gid=await ensureGid(tok);
-    if(!gid){ setSyncDot('error'); return; }
+    if(!gid){ setSyncDot('error'); if(manual) showToast('No se pudo crear/encontrar el Gist'); return; }
     const h={'Authorization':`token ${tok}`};
-    const j=await(await fetch(`https://api.github.com/gists/${gid}`,{headers:h,cache:'no-store'})).json();
+    const j=await ghFetch(`https://api.github.com/gists/${gid}`,{headers:h,cache:'no-store'});
     const content=j&&j.files&&j.files[GFILE]?j.files[GFILE].content:null;
     const remote=content?parseSyncDoc(content):{records:[],banks:null,names:null};
-    if(!remote){ setSyncDot('error'); return; }
+    if(!remote){ setSyncDot('error'); if(manual) showToast('El Gist no tiene datos válidos'); return; }
     const rRecs=remote.records||[], rBanks=remote.banks||[], rNames=remote.names||[];
     // ¿debemos subir? (tenemos datos que el remoto aún no refleja)
     const needPush =
@@ -1460,7 +1473,8 @@ async function syncNow(){
         body:JSON.stringify({files:{[GFILE]:{content:buildSyncDoc()}}})});
     }
     setSyncDot('synced');
-  }catch(e){ setSyncDot('error'); }
+    if(manual) showToast('Sincronizado ✓');
+  }catch(e){ setSyncDot('error'); if(manual) showToast('No sincronizó: '+syncErrMsg(e)); }
   finally{ _syncing=false; if(_syncAgain){ _syncAgain=false; syncNow(); } }
 }
 
@@ -1471,9 +1485,9 @@ function scheduleSync(){
 }
 
 let _pollTimer=null;
-function startSync(){
-  if(!localStorage.getItem('gh_tok')) return;
-  syncNow();
+function startSync(manual){
+  if(!localStorage.getItem('gh_tok')){ if(manual) showToast('Falta el token (⚙️)'); return; }
+  syncNow(manual);
   if(_pollTimer) clearInterval(_pollTimer);
   _pollTimer=setInterval(()=>{ if(!document.hidden) syncNow(); }, POLL_MS);
 }
@@ -1484,8 +1498,8 @@ function saveCreds(){
   if(gid) localStorage.setItem('gh_gid',gid);
 }
 // Ambos botones ahora hacen una sincronización segura por fusión (sin borrar nada)
-$('btn-push').addEventListener('click',()=>{ haptic(); saveCreds(); startSync(); showToast('Sincronizando…'); });
-$('btn-pull').addEventListener('click',()=>{ haptic(); saveCreds(); startSync(); showToast('Sincronizando…'); });
+$('btn-push').addEventListener('click',()=>{ haptic(); saveCreds(); showToast('Sincronizando…'); startSync(true); });
+$('btn-pull').addEventListener('click',()=>{ haptic(); saveCreds(); showToast('Sincronizando…'); startSync(true); });
 // "Borrar" solo limpia la copia LOCAL (no toca la nube; se vuelve a bajar al sincronizar)
 $('btn-clear').addEventListener('click',()=>{
   if(confirm('¿Borrar los datos de ESTE dispositivo? (No borra la nube; se vuelven a descargar al sincronizar)')){
@@ -1497,10 +1511,10 @@ $('btn-sync').addEventListener('click',()=>{
   haptic();
   if(!localStorage.getItem('gh_tok')){ showToast('Configura tu token en ⚙️'); openSheet('cfg'); return; }
   showToast('Sincronizando…');
-  startSync();
+  startSync(true);
 });
 // Guardar credenciales automáticamente al escribirlas (sin tener que pulsar otro botón)
-DOM['gh-tok'].addEventListener('change',()=>{ saveCreds(); if(localStorage.getItem('gh_tok')){ showToast('Sincronizando…'); startSync(); } });
+DOM['gh-tok'].addEventListener('change',()=>{ saveCreds(); if(localStorage.getItem('gh_tok')) startSync(true); });
 DOM['gh-gid'].addEventListener('change',()=>{ saveCreds(); });
 // Sincroniza al volver a la pestaña / recuperar el foco
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) syncNow(); });
