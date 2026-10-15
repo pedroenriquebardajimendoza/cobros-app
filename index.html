@@ -1474,14 +1474,25 @@ async function syncNow(manual){
     const recon=reconcileBanksFromRecords(); // recupera bancos desde los cobros
     const changedLocal=JSON.stringify([records,banks,names])!==before;
     if(changedLocal){ persistAll(); rebuildBankDerived(); renderAll(); }
+    // La bajada ya ocurrió arriba. Subir es aparte: si falla (token sin escritura),
+    // NO perdemos la bajada — los datos ya se mostraron.
     if(needPush||recon){
-      await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',
-        headers:{...h,'Content-Type':'application/json'},
-        body:JSON.stringify({files:{[GFILE]:{content:buildSyncDoc()}}})});
+      try{
+        const pr=await fetch(`https://api.github.com/gists/${gid}`,{method:'PATCH',
+          headers:{...h,'Content-Type':'application/json'},
+          body:JSON.stringify({files:{[GFILE]:{content:buildSyncDoc()}}})});
+        if(!pr.ok) throw new Error(ghErr(pr.status));
+        setSyncDot('synced');
+        if(manual) showToast('Sincronizado ✓');
+      }catch(pe){
+        setSyncDot('synced');
+        if(manual) showToast('Datos cargados (solo lectura — el token no puede escribir)');
+      }
+    } else {
+      setSyncDot('synced');
+      if(manual) showToast('Sincronizado ✓');
     }
-    setSyncDot('synced');
-    if(manual) showToast('Sincronizado ✓');
-  }catch(e){ setSyncDot('error'); if(manual) showToast('No sincronizó: '+syncErrMsg(e)); }
+  }catch(e){ setSyncDot('error'); if(manual) showToast('No bajó: '+syncErrMsg(e)); }
   finally{ _syncing=false; if(_syncAgain){ _syncAgain=false; syncNow(); } }
 }
 
