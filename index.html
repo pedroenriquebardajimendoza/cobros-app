@@ -1454,7 +1454,10 @@ async function syncNow(manual){
     if(!gid){ setSyncDot('error'); if(manual) showToast('No se pudo crear/encontrar el Gist'); return; }
     const h={'Authorization':`token ${tok}`};
     const j=await ghFetch(`https://api.github.com/gists/${gid}`,{headers:h,cache:'no-store'});
-    const content=j&&j.files&&j.files[GFILE]?j.files[GFILE].content:null;
+    const f=j&&j.files?j.files[GFILE]:null;
+    let content=f?f.content:null;
+    // Si el archivo es grande, GitHub lo manda truncado: bajar el contenido COMPLETO del raw_url
+    if(f&&f.truncated&&f.raw_url){ content=await (await fetch(f.raw_url,{cache:'no-store'})).text(); }
     const remote=content?parseSyncDoc(content):{records:[],banks:null,names:null};
     if(!remote){ setSyncDot('error'); if(manual) showToast('El Gist no tiene datos válidos'); return; }
     const rRecs=remote.records||[], rBanks=remote.banks||[], rNames=remote.names||[];
