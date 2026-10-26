@@ -104,8 +104,11 @@
       background:var(--surface2);
       border-radius:20px;
       border:1px solid var(--border);
-      display:flex;align-items:center;justify-content:space-between;
     }
+    .stats-top{display:flex;align-items:center;justify-content:space-between}
+    .stats-prog{margin-top:12px;height:7px;border-radius:999px;background:var(--surface3);overflow:hidden}
+    .stats-prog-fill{height:100%;background:var(--green);border-radius:999px;width:0%;transition:width .35s cubic-bezier(.4,0,.2,1)}
+    .stats-prog.hidden{display:none}
     .stats-left{display:flex;flex-direction:column;gap:2px}
     #day-total{font-size:1.6rem;font-weight:800;color:var(--green);letter-spacing:-.03em;line-height:1.15}
     #day-info{font-size:0.66rem;color:var(--muted);font-weight:500;letter-spacing:.01em}
@@ -573,14 +576,17 @@
     </div>
   </div>
   <div class="stats-card">
-    <div class="stats-left">
-      <span id="day-total">$0.00</span>
-      <span id="day-info">Sin entradas</span>
+    <div class="stats-top">
+      <div class="stats-left">
+        <span id="day-total">$0.00</span>
+        <span id="day-info">Sin entradas</span>
+      </div>
+      <div class="stats-right">
+        <div class="stat-pill pending"><span class="stat-num" id="stat-pend">0</span><span class="stat-lbl">pend.</span></div>
+        <div class="stat-pill confirmed"><span class="stat-num" id="stat-conf">0</span><span class="stat-lbl">conf.</span></div>
+      </div>
     </div>
-    <div class="stats-right">
-      <div class="stat-pill pending"><span class="stat-num" id="stat-pend">0</span><span class="stat-lbl">pend.</span></div>
-      <div class="stat-pill confirmed"><span class="stat-num" id="stat-conf">0</span><span class="stat-lbl">conf.</span></div>
-    </div>
+    <div class="stats-prog" id="stats-prog"><div class="stats-prog-fill" id="prog-fill"></div></div>
   </div>
   <div class="filter-row"></div>
 </header>
@@ -799,7 +805,14 @@ const DOM = {};
  'hist-list'].forEach(id => { DOM[id] = $(id); });
 
 // ── Haptic feedback ─────────────────────────────────────────────────────────
-function haptic(ms=10){ if(navigator.vibrate) navigator.vibrate(ms); }
+function haptic(ms=10){
+  // iPhone: haptic nativo (como el teclado) vía Capacitor; Android/web: vibrate
+  try{
+    const H = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics;
+    if(H){ H.impact({style: ms>=20?'MEDIUM':'LIGHT'}); return; }
+  }catch(e){}
+  if(navigator.vibrate) navigator.vibrate(ms);
+}
 let _toastTimer;
 function showToast(msg) {
   const el = $('toast');
@@ -886,15 +899,21 @@ function renderHeader() {
   DOM['date-label'].textContent = label;
   DOM['date-sub'].textContent   = sub;
   const recs = getDayRecs();
-  let total=0, conf=0, pend=0;
+  let total=0, conf=0, pend=0, confAmt=0;
   for (const r of recs) {
     total += r.amount;
-    if (r.confirmed) conf++; else pend++;
+    if (r.confirmed){ conf++; confAmt+=r.amount; } else pend++;
   }
   DOM['day-total'].textContent = fmt(total);
   DOM['day-info'].textContent  = recs.length===0 ? 'Sin entradas' : `${recs.length} cobro${recs.length!==1?'s':''}`;
   DOM['stat-pend'].textContent = pend;
   DOM['stat-conf'].textContent = conf;
+  // Barra: cuánto del total del día ya está confirmado (calmado, informativo)
+  const prog=$('stats-prog'), fill=$('prog-fill');
+  if(prog && fill){
+    prog.classList.toggle('hidden', recs.length===0);
+    fill.style.width = (total>0 ? Math.round(confAmt/total*100) : 0) + '%';
+  }
   DOM['btn-next'].disabled = viewDate >= todayISO();
 }
 
