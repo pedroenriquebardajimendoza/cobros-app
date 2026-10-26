@@ -13,6 +13,7 @@
       --bg:#101012; --surface:#1c1c1f; --surface2:#252528; --surface3:#2e2e32;
       --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.12);
       --text:#f0f0f2; --text-2:#b4b4ba; --muted:#6e6e76;
+      --on-bg:#f0f0f2; --on-fg:#141416;
       --green:#30d158; --green-dim:rgba(48,209,88,.12);
       --red:#ff453a; --red-dim:rgba(255,69,58,.12);
       --yellow:#ffd60a; --accent:#0a84ff; --accent-dim:rgba(10,132,255,.12);
@@ -34,7 +35,8 @@
       --bg:#f2f2f7; --surface:#ffffff; --surface2:#f0f0f2; --surface3:#e8e8ec;
       --border:rgba(0,0,0,.06); --border-strong:rgba(0,0,0,.1);
       --text:#1c1c1e; --text-2:#48484a; --muted:#8e8e93;
-      --green:#28a745; --green-dim:rgba(40,167,69,.08);
+      --on-bg:#17181a; --on-fg:#ffffff;
+      --green:#1fb866; --green-dim:rgba(31,184,102,.10);
       --red:#ff3b30; --red-dim:rgba(255,59,48,.08);
       --yellow:#ff9500; --accent:#007aff; --accent-dim:rgba(0,122,255,.06);
       --purple:#af52de; --purple-dim:rgba(175,82,222,.08);
@@ -110,6 +112,10 @@
     .stats-prog-fill{height:100%;background:var(--green);border-radius:999px;width:0%;transition:width .35s cubic-bezier(.4,0,.2,1)}
     .stats-prog.hidden{display:none}
     .stats-left{display:flex;flex-direction:column;gap:2px}
+    .total-row{display:flex;align-items:center;gap:9px}
+    .eye-btn{background:none;border:none;cursor:pointer;font-size:0.85rem;color:var(--muted);padding:2px;line-height:1;opacity:.75}
+    .eye-btn:active{transform:scale(.88)}
+    body.hide-amt .ea, body.hide-amt #day-total{filter:blur(8px);-webkit-filter:blur(8px);user-select:none}
     #day-total{font-size:1.6rem;font-weight:800;color:var(--green);letter-spacing:-.03em;line-height:1.15}
     #day-info{font-size:0.66rem;color:var(--muted);font-weight:500;letter-spacing:.01em}
     .stats-right{display:flex;gap:7px}
@@ -128,16 +134,16 @@
       display:flex;flex-wrap:wrap;gap:6px;padding:4px 12px 10px;
     }
     .pill{
-      padding:6px 14px;border-radius:100px;
-      border:1.5px solid var(--border-strong);background:transparent;
-      color:var(--muted);font-size:0.68rem;font-weight:600;
+      padding:8px 16px;border-radius:100px;
+      border:1px solid var(--border-strong);background:var(--surface);
+      color:var(--text-2);font-size:0.72rem;font-weight:600;
       white-space:nowrap;cursor:pointer;
       transition:all .2s cubic-bezier(.4,.0,.2,1);letter-spacing:.01em;
     }
     .pill:active{transform:scale(.93)}
     .pill.active{
-      border-color:var(--pill-active-border);color:var(--accent);
-      background:var(--pill-active-bg);
+      border-color:transparent;color:var(--on-fg);
+      background:var(--on-bg);font-weight:700;
     }
 
     /* ── MAIN ── */
@@ -578,7 +584,10 @@
   <div class="stats-card">
     <div class="stats-top">
       <div class="stats-left">
-        <span id="day-total">$0.00</span>
+        <div class="total-row">
+          <span id="day-total">$0.00</span>
+          <button class="eye-btn" id="btn-eye" aria-label="Ocultar monto">👁</button>
+        </div>
         <span id="day-info">Sin entradas</span>
       </div>
       <div class="stats-right">
@@ -1264,6 +1273,11 @@ $('name-custom-ok').addEventListener('click', confirmCustomName);
 $('name-inp').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();confirmCustomName();}});
 $('btn-hist').addEventListener('click',()=>openSheet('hist'));
 $('btn-cfg').addEventListener('click',()=>openSheet('cfg'));
+// Ojo: ocultar/mostrar los montos (difuminado, privacidad)
+function applyHideAmt(h){ document.body.classList.toggle('hide-amt', h); const e=$('btn-eye'); if(e) e.textContent = h?'🙈':'👁'; }
+let _hideAmt = localStorage.getItem('hide_amt')==='1';
+$('btn-eye').addEventListener('click',()=>{ haptic(); _hideAmt=!_hideAmt; localStorage.setItem('hide_amt', _hideAmt?'1':'0'); applyHideAmt(_hideAmt); });
+applyHideAmt(_hideAmt);
 
 function renderHist() {
   const el = DOM['hist-list'];
