@@ -738,9 +738,14 @@
       <button class="mgr-add-btn" id="btn-add-name">+</button>
     </div>
     <div class="set-section" style="padding-top:14px">
-      <span class="set-label">Sincronizar · GitHub Gist</span>
-      <input class="set-inp" id="gh-tok" type="password" placeholder="Personal Access Token (scope: gist)" autocomplete="off">
-      <input class="set-inp" id="gh-gid" type="text" placeholder="Gist ID (vacío = crear automático)" autocomplete="off">
+      <span class="set-label">Sincronizar entre dispositivos</span>
+      <input class="set-inp" id="sync-code" type="text" placeholder="Pega aquí tu código de sincronización" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <button class="set-btn" id="btn-copy-code" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>Copiar mi código</span></button>
+      <details style="margin-top:6px">
+        <summary style="font-size:13px;opacity:.55;cursor:pointer;padding:4px 0">Avanzado (token y Gist)</summary>
+        <input class="set-inp" id="gh-tok" type="password" placeholder="Personal Access Token (scope: gist)" autocomplete="off" style="margin-top:6px">
+        <input class="set-inp" id="gh-gid" type="text" placeholder="Gist ID (vacío = crear automático)" autocomplete="off">
+      </details>
     </div>
     <button class="set-btn" id="btn-push"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg><span>Sincronizar ahora</span></button>
     <button class="set-btn" id="btn-pull"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg><span>Volver a bajar de GitHub</span></button>
@@ -817,7 +822,7 @@ const DOM = {};
  'btn-next','list',
  'name-desc','name-custom','name-grid','name-inp',
  'edit-amount','edit-name','leg-body','leg-arr','btn-theme','theme-val',
- 'sync-dot','gh-tok','gh-gid','cal-title','cal-next','cal-grid',
+ 'sync-dot','gh-tok','gh-gid','sync-code','cal-title','cal-next','cal-grid',
  'hist-list'].forEach(id => { DOM[id] = $(id); });
 
 // ── Haptic feedback ─────────────────────────────────────────────────────────
@@ -1563,6 +1568,39 @@ function saveCreds(){
   if(tok) localStorage.setItem('gh_tok',tok);
   if(gid) localStorage.setItem('gh_gid',gid);
 }
+
+// ── Código de sincronización ─────────────────────────────────────────────────
+// Un solo texto que lleva token + Gist juntos, para no teclear nada de GitHub en
+// cada dispositivo: lo copias de un equipo ya sincronizado y lo pegas en el nuevo.
+function makeSyncCode(){
+  const tok=localStorage.getItem('gh_tok')||'', gid=localStorage.getItem('gh_gid')||'';
+  if(!tok) return '';
+  return 'COB1-'+btoa(tok+'|'+gid);
+}
+function applySyncCode(code){
+  code=(code||'').trim();
+  if(!code.startsWith('COB1-')) return false;
+  let tok,gid;
+  try{ const p=atob(code.slice(5)).split('|'); tok=p[0]; gid=p[1]||''; }catch(e){ return false; }
+  if(!tok) return false;
+  localStorage.setItem('gh_tok',tok);
+  if(gid) localStorage.setItem('gh_gid',gid);
+  if(DOM['gh-tok']) DOM['gh-tok'].value=tok;
+  if(DOM['gh-gid']) DOM['gh-gid'].value=gid;
+  return true;
+}
+$('btn-copy-code').addEventListener('click', async ()=>{
+  haptic(); const code=makeSyncCode();
+  if(!code){ showToast('Este dispositivo aún no está sincronizado'); return; }
+  try{ await navigator.clipboard.writeText(code); showToast('Código copiado — pégalo en el otro dispositivo'); }
+  catch(e){ DOM['sync-code'].value=code; DOM['sync-code'].select(); showToast('Mantén pulsado y copia el código'); }
+});
+DOM['sync-code'].addEventListener('change',()=>{
+  const v=DOM['sync-code'].value.trim();
+  if(!v) return;
+  if(applySyncCode(v)){ DOM['sync-code'].value=''; showToast('Listo — sincronizando…'); startSync(true); }
+  else showToast('Ese código no es válido');
+});
 // Ambos botones ahora hacen una sincronización segura por fusión (sin borrar nada)
 $('btn-push').addEventListener('click',()=>{ haptic(); saveCreds(); showToast('Sincronizando…'); startSync(true); });
 $('btn-pull').addEventListener('click',()=>{ haptic(); saveCreds(); showToast('Sincronizando…'); startSync(true); });

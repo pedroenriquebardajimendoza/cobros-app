@@ -1,4 +1,4 @@
-const CACHE = 'cobros-v6';
+const CACHE = 'cobros-v7';
 const ASSETS = ['./'];
 
 self.addEventListener('install', e => {
